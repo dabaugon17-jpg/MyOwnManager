@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { TrendingUp, Wallet, PiggyBank, LogOut, Users } from "lucide-react";
+import React, { useEffect, useState, useMemo } from "react";
+import { TrendingUp, Wallet, PiggyBank, LogOut, Users, Target, Boxes, ChevronDown } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from "recharts";
 import api from "../lib/api";
 import { useAuth } from "../context/AuthContext";
@@ -13,26 +13,41 @@ const FILTERS = [
 ];
 
 const fmt = (n) => new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(n || 0);
+const fmtPrecise = (n) => new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(n || 0);
 
 export default function Dashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [filter, setFilter] = useState("month");
+  const [vendedor, setVendedor] = useState("");
   const [group, setGroup] = useState(null);
+  const [members, setMembers] = useState([]);
 
   useEffect(() => {
-    api.get(`/dashboard?filter=${filter}`).then(r => setData(r.data)).catch(() => {});
-  }, [filter]);
+    const q = vendedor ? `&vendedor_id=${vendedor}` : "";
+    api.get(`/dashboard?filter=${filter}${q}`).then(r => setData(r.data)).catch(() => {});
+  }, [filter, vendedor]);
 
   useEffect(() => {
     api.get("/groups/me").then(r => setGroup(r.data)).catch(() => {});
+    api.get("/groups/members").then(r => setMembers(r.data)).catch(() => {});
   }, []);
 
   const onLogout = async () => {
     await logout();
     navigate("/login", { replace: true });
   };
+
+  const progressPct = Math.min(100, data?.progreso_pct || 0);
+  const onTrack = useMemo(() => {
+    if (!data?.objetivo_mensual) return null;
+    const now = new Date();
+    const day = now.getDate();
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const expectedPct = (day / daysInMonth) * 100;
+    return progressPct >= expectedPct;
+  }, [data, progressPct]);
 
   return (
     <div className="px-4 md:px-8 pt-6 pb-32 max-w-5xl mx-auto fade-up">
@@ -42,12 +57,7 @@ export default function Dashboard() {
           <h1 className="font-display text-3xl md:text-4xl font-semibold mt-1">Hola, {user?.name?.split(" ")[0] || "👋"}</h1>
         </div>
         <div className="flex items-center gap-1">
-          <button
-            data-testid="members-btn"
-            onClick={() => navigate("/app/miembros")}
-            className="p-2 rounded-lg hover:bg-white/5 text-white/60 hover:text-white"
-            aria-label="Miembros"
-          >
+          <button data-testid="members-btn" onClick={() => navigate("/app/miembros")} className="p-2 rounded-lg hover:bg-white/5 text-white/60 hover:text-white" aria-label="Miembros">
             <Users size={18}/>
           </button>
           <button data-testid="logout-btn" onClick={onLogout} className="p-2 rounded-lg hover:bg-white/5 text-white/60 hover:text-white">
@@ -56,11 +66,78 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <section data-testid="kpi-section" className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+      {/* Vendor filter */}
+      {members.length > 1 && (
+        <div className="mb-5 flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] tracking-[0.2em] uppercase text-white/40">Filtrar:</span>
+          <button
+            data-testid="vendor-all"
+            onClick={() => setVendedor("")}
+            className={`px-3 py-1.5 rounded-full text-xs border transition-colors ${vendedor === "" ? "bg-white text-black border-white" : "border-white/10 text-white/70 hover:bg-white/5"}`}
+          >Todos</button>
+          {members.map(m => (
+            <button
+              key={m.user_id}
+              data-testid={`vendor-${m.user_id}`}
+              onClick={() => setVendedor(m.user_id)}
+              className={`px-3 py-1.5 rounded-full text-xs border transition-colors ${vendedor === m.user_id ? "bg-white text-black border-white" : "border-white/10 text-white/70 hover:bg-white/5"}`}
+            >{m.name?.split(" ")[0] || m.email}</button>
+          ))}
+        </div>
+      )}
+
+      <section data-testid="kpi-section" className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <KpiCard testid="kpi-facturacion" icon={<TrendingUp size={18}/>} label="Facturación total" value={fmt(data?.facturacion_total)} accent="from-emerald-500/10"/>
         <KpiCard testid="kpi-beneficio" icon={<Wallet size={18}/>} label="Beneficio neto" value={fmt(data?.beneficio_neto)} accent="from-white/10"/>
-        <KpiCard testid="kpi-inversion" icon={<PiggyBank size={18}/>} label="Inversión" value={fmt(data?.inversion)} accent="from-amber-500/10"/>
+        <KpiCard testid="kpi-inversion" icon={<PiggyBank size={18}/>} label="Inversión total" value={fmt(data?.inversion)} accent="from-amber-500/10"/>
       </section>
+
+      <section className="grid grid-cols-2 gap-4 mb-8">
+        <div className="bg-[#141414] border border-white/10 rounded-2xl p-4">
+          <div className="flex items-center gap-2 text-white/50 text-[11px] tracking-[0.2em] uppercase mb-2">
+            <Boxes size={14}/> Stock actual
+          </div>
+          <p className="font-display text-2xl font-semibold">{data?.stock_count ?? 0}</p>
+          <p className="text-xs text-white/40 mt-0.5">{fmtPrecise(data?.stock_value)} en valor</p>
+        </div>
+        <div className="bg-[#141414] border border-white/10 rounded-2xl p-4">
+          <div className="flex items-center gap-2 text-white/50 text-[11px] tracking-[0.2em] uppercase mb-2">
+            <TrendingUp size={14}/> Este mes
+          </div>
+          <p className="font-display text-2xl font-semibold">{fmt(data?.facturacion_mes)}</p>
+          <p className="text-xs text-white/40 mt-0.5">{data?.ventas_mes ?? 0} venta{(data?.ventas_mes ?? 0) !== 1 ? "s" : ""}</p>
+        </div>
+      </section>
+
+      {/* Monthly target */}
+      {data?.objetivo_mensual > 0 ? (
+        <section data-testid="target-section" className="bg-[#141414] border border-white/10 rounded-2xl p-5 mb-8 relative overflow-hidden">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2 text-white/60 text-[11px] tracking-[0.2em] uppercase">
+              <Target size={14}/> Objetivo del mes
+            </div>
+            <span className={`text-xs font-medium ${onTrack ? "text-emerald-400" : "text-amber-400"}`}>
+              {onTrack ? "↑ En ritmo" : "↓ Por debajo del ritmo"}
+            </span>
+          </div>
+          <div className="flex items-end gap-3 mb-3">
+            <p className="font-display text-3xl font-semibold">{fmt(data.facturacion_mes)}</p>
+            <p className="text-white/40 text-sm mb-1">de {fmt(data.objetivo_mensual)}</p>
+            <p data-testid="target-pct" className="ml-auto text-2xl font-display font-semibold tabular-nums">{progressPct.toFixed(0)}%</p>
+          </div>
+          <div className="h-2.5 w-full bg-white/5 rounded-full overflow-hidden">
+            <div className="h-full bg-gradient-to-r from-emerald-500 via-emerald-400 to-white transition-all duration-700" style={{ width: `${progressPct}%` }}/>
+          </div>
+        </section>
+      ) : (
+        <section className="bg-white/[0.02] border border-dashed border-white/10 rounded-2xl p-5 mb-8 text-center">
+          <Target className="mx-auto text-white/30 mb-2" size={20}/>
+          <p className="text-sm text-white/50 mb-2">Sin objetivo de mes definido</p>
+          <button onClick={() => navigate("/app/miembros")} className="text-xs text-white underline underline-offset-4 hover:no-underline">
+            Definir en Miembros →
+          </button>
+        </section>
+      )}
 
       <section className="bg-[#141414] border border-white/10 rounded-2xl p-5">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
@@ -88,7 +165,7 @@ export default function Dashboard() {
               <Tooltip
                 cursor={{ fill: "rgba(255,255,255,0.04)" }}
                 contentStyle={{ background: "#141414", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
-                formatter={(v) => [fmt(v), "Ingresos"]}
+                formatter={(v) => [fmtPrecise(v), "Ingresos"]}
               />
               <Bar dataKey="value" fill="#FFFFFF" radius={[6, 6, 0, 0]} />
             </BarChart>

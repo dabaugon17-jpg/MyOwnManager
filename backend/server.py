@@ -89,6 +89,11 @@ class CreateGroupIn(BaseModel):
     nombre_negocio: str
 
 
+class UpdateGroupIn(BaseModel):
+    nombre_negocio: Optional[str] = None
+    objetivo_mensual: Optional[float] = None
+
+
 class JoinGroupIn(BaseModel):
     codigo_union: str
 
@@ -99,6 +104,14 @@ class ProductCreateIn(BaseModel):
     foto_url: Optional[str] = None
     file_id: Optional[str] = None
     cantidad: int = 1
+    categoria: Optional[str] = None
+
+
+class ProductUpdateIn(BaseModel):
+    nombre: Optional[str] = None
+    precio_compra: Optional[float] = None
+    categoria: Optional[str] = None
+    file_id: Optional[str] = None
 
 
 class SellIn(BaseModel):
@@ -336,6 +349,22 @@ async def my_group(user: dict = Depends(get_current_user)):
     return group
 
 
+@api_router.put("/groups")
+async def update_group(payload: UpdateGroupIn, user: dict = Depends(get_current_user)):
+    grupo = require_group(user)
+    if not can_manage_members(get_role(user)):
+        raise HTTPException(status_code=403, detail="Sin permisos para editar el grupo")
+    updates = {}
+    if payload.nombre_negocio is not None:
+        updates["nombre_negocio"] = payload.nombre_negocio
+    if payload.objetivo_mensual is not None:
+        updates["objetivo_mensual"] = max(0.0, float(payload.objetivo_mensual))
+    if updates:
+        await db.grupos.update_one({"codigo_union": grupo}, {"$set": updates})
+    g = await db.grupos.find_one({"codigo_union": grupo}, {"_id": 0})
+    return g
+
+
 def require_group(user: dict) -> str:
     if not user.get("codigo_grupo"):
         raise HTTPException(status_code=400, detail="Debes unirte o crear un grupo")
@@ -507,6 +536,7 @@ async def create_product(payload: ProductCreateIn, user: dict = Depends(get_curr
             "estado": "inventario",
             "foto_url": foto_url,
             "file_id": payload.file_id,
+            "categoria": (payload.categoria or "Otros").strip() or "Otros",
             "codigo_grupo": grupo,
             "created_by": user["user_id"],
             "created_at": now,
@@ -517,6 +547,30 @@ async def create_product(payload: ProductCreateIn, user: dict = Depends(get_curr
         await db.productos.insert_one(doc)
         created.append(clean(dict(doc)))
     return {"created": len(created), "products": created}
+
+
+@api_router.put("/products/{product_id}")
+async def update_product(product_id: str, payload: ProductUpdateIn, user: dict = Depends(get_current_user)):
+    grupo = require_group(user)
+    if not can_manage_members(get_role(user)):
+        raise HTTPException(status_code=403, detail="Solo admin total / creador pueden editar productos")
+    prod = await db.productos.find_one({"product_id": product_id, "codigo_grupo": grupo})
+    if not prod:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    updates = {}
+    if payload.nombre is not None:
+        updates["nombre"] = payload.nombre
+    if payload.precio_compra is not None:
+        updates["precio_compra"] = float(payload.precio_compra)
+    if payload.categoria is not None:
+        updates["categoria"] = payload.categoria
+    if payload.file_id is not None:
+        updates["file_id"] = payload.file_id
+        updates["foto_url"] = f"/api/files/{payload.file_id}"
+    if updates:
+        await db.productos.update_one({"product_id": product_id}, {"$set": updates})
+    prod = await db.productos.find_one({"product_id": product_id}, {"_id": 0})
+    return prod
 
 
 @api_router.put("/products/{product_id}/sell")
@@ -572,6 +626,8 @@ async def mark_incidencia(product_id: str, payload: IncidenciaIn, user: dict = D
 @api_router.delete("/products/{product_id}")
 async def delete_product(product_id: str, user: dict = Depends(get_current_user)):
     grupo = require_group(user)
+    if not can_manage_members(get_role(user)):
+        raise HTTPException(status_code=403, detail="Solo admin total / creador pueden eliminar productos")
     res = await db.productos.delete_one({"product_id": product_id, "codigo_grupo": grupo})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
@@ -614,6 +670,30 @@ async def sales_stats(user: dict = Depends(get_current_user)):
     return {"members": members}
 
 
+@api_router.get("/sales/export.csv")
+async def export_sales_csv(user: dict = Depends(get_current_user)):
+    grupo = require_group(user)
+    sold = await db.productos.find(
+        {"codigo_grupo": grupo, "estado": "vendido"}, {"_id": 0}
+    ).sort("sold_at", -1).to_list(10000)
+    lines = ["Fecha,Producto,Categoría,Precio compra (€),Precio venta (€),Beneficio (€),Vendedor"]
+    for p in sold:
+        fecha = (p.get("sold_at") or "")[:10]
+        nombre = (p.get("nombre") or "").replace('"', "'")
+        cat = p.get("categoria") or "Otros"
+        pc = p.get("precio_compra") or 0
+        pv = p.get("precio_venta") or 0
+        ben = round(pv - pc, 2)
+        vend = (p.get("sold_by_name") or "").replace('"', "'")
+        lines.append(f'{fecha},"{nombre}",{cat},{pc:.2f},{pv:.2f},{ben:.2f},"{vend}"')
+    csv = "\n".join(lines) + "\n"
+    return Response(
+        content=csv,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="ventas.csv"'},
+    )
+
+
 @api_router.get("/incidents")
 async def list_incidents(user: dict = Depends(get_current_user)):
     grupo = require_group(user)
@@ -650,18 +730,41 @@ async def delete_incident(incidencia_id: str, user: dict = Depends(get_current_u
 
 # ----------------- Dashboard -----------------
 @api_router.get("/dashboard")
-async def dashboard(filter: str = "month", user: dict = Depends(get_current_user)):
+async def dashboard(filter: str = "month", vendedor_id: Optional[str] = None, user: dict = Depends(get_current_user)):
     grupo = require_group(user)
-    # totals over all products
     all_products = await db.productos.find({"codigo_grupo": grupo}, {"_id": 0}).to_list(5000)
-    facturacion_total = sum((p.get("precio_venta") or 0) for p in all_products if p.get("estado") == "vendido")
-    inversion = sum((p.get("precio_compra") or 0) for p in all_products)
-    coste_vendidos = sum((p.get("precio_compra") or 0) for p in all_products if p.get("estado") == "vendido")
-    beneficio_neto = facturacion_total - coste_vendidos
 
-    # chart series
+    def matches_vendor(p):
+        return (vendedor_id is None) or (p.get("sold_by") == vendedor_id)
+
+    facturacion_total = sum((p.get("precio_venta") or 0) for p in all_products if p.get("estado") == "vendido" and matches_vendor(p))
+    inversion = sum((p.get("precio_compra") or 0) for p in all_products)
+    coste_vendidos = sum((p.get("precio_compra") or 0) for p in all_products if p.get("estado") == "vendido" and matches_vendor(p))
+    beneficio_neto = facturacion_total - coste_vendidos
+    stock_value = sum((p.get("precio_compra") or 0) for p in all_products if p.get("estado") == "inventario")
+    stock_count = sum(1 for p in all_products if p.get("estado") == "inventario")
+
     now = datetime.now(timezone.utc)
+    # monthly target progress (current calendar month)
+    facturacion_mes = 0.0
+    ventas_mes = 0
+    for p in all_products:
+        if p.get("estado") == "vendido" and p.get("sold_at") and matches_vendor(p):
+            sd = datetime.fromisoformat(p["sold_at"])
+            if sd.tzinfo is None:
+                sd = sd.replace(tzinfo=timezone.utc)
+            if sd.year == now.year and sd.month == now.month:
+                facturacion_mes += p.get("precio_venta") or 0
+                ventas_mes += 1
+    group_doc = await db.grupos.find_one({"codigo_union": grupo}, {"_id": 0})
+    objetivo = float(group_doc.get("objetivo_mensual") or 0) if group_doc else 0
+    progreso_pct = round((facturacion_mes / objetivo) * 100, 1) if objetivo > 0 else 0
+
     buckets = []
+    # Apply vendor filter to bucket totals
+    def _vmatch(p):
+        return matches_vendor(p)
+
     if filter == "day":
         # last 7 days
         for i in range(6, -1, -1):
@@ -669,7 +772,7 @@ async def dashboard(filter: str = "month", user: dict = Depends(get_current_user
             label = d.strftime("%d/%m")
             total = 0.0
             for p in all_products:
-                if p.get("estado") == "vendido" and p.get("sold_at"):
+                if p.get("estado") == "vendido" and p.get("sold_at") and _vmatch(p):
                     sd = datetime.fromisoformat(p["sold_at"]).date()
                     if sd == d:
                         total += p.get("precio_venta") or 0
@@ -682,7 +785,7 @@ async def dashboard(filter: str = "month", user: dict = Depends(get_current_user
             label = f"S{wk_start.isocalendar()[1]}"
             total = 0.0
             for p in all_products:
-                if p.get("estado") == "vendido" and p.get("sold_at"):
+                if p.get("estado") == "vendido" and p.get("sold_at") and _vmatch(p):
                     sd = datetime.fromisoformat(p["sold_at"])
                     if sd.tzinfo is None:
                         sd = sd.replace(tzinfo=timezone.utc)
@@ -695,7 +798,7 @@ async def dashboard(filter: str = "month", user: dict = Depends(get_current_user
             label = str(y)
             total = 0.0
             for p in all_products:
-                if p.get("estado") == "vendido" and p.get("sold_at"):
+                if p.get("estado") == "vendido" and p.get("sold_at") and _vmatch(p):
                     sd = datetime.fromisoformat(p["sold_at"])
                     if sd.year == y:
                         total += p.get("precio_venta") or 0
@@ -703,7 +806,6 @@ async def dashboard(filter: str = "month", user: dict = Depends(get_current_user
     else:  # month
         labels_es = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
         for i in range(11, -1, -1):
-            # compute month i months back
             year = now.year
             month = now.month - i
             while month <= 0:
@@ -712,7 +814,7 @@ async def dashboard(filter: str = "month", user: dict = Depends(get_current_user
             label = labels_es[month - 1]
             total = 0.0
             for p in all_products:
-                if p.get("estado") == "vendido" and p.get("sold_at"):
+                if p.get("estado") == "vendido" and p.get("sold_at") and _vmatch(p):
                     sd = datetime.fromisoformat(p["sold_at"])
                     if sd.year == year and sd.month == month:
                         total += p.get("precio_venta") or 0
@@ -722,8 +824,15 @@ async def dashboard(filter: str = "month", user: dict = Depends(get_current_user
         "facturacion_total": round(facturacion_total, 2),
         "beneficio_neto": round(beneficio_neto, 2),
         "inversion": round(inversion, 2),
+        "stock_value": round(stock_value, 2),
+        "stock_count": stock_count,
+        "facturacion_mes": round(facturacion_mes, 2),
+        "ventas_mes": ventas_mes,
+        "objetivo_mensual": round(objetivo, 2),
+        "progreso_pct": progreso_pct,
         "chart": buckets,
         "filter": filter,
+        "vendedor_id": vendedor_id,
     }
 
 

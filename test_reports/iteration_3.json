@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 3 testing complete. Backend: 19/19 pytest pass (PUT /groups, /groups/me objetivo_mensual, POST /products categoria + default 'Otros', PUT /products perms, DELETE /products 403 for admin_menor/member, /sales/export.csv headers+columns, /dashboard new fields + vendedor_id filter). Frontend: Onboarding/Inventory/Members all working — objetivo save, category select on add, search input, cat-* chips, edit modal, delete via menu, member role-gating (no menu-* for members, no input-objetivo for members), vendor-* chips after a second member joins. CRITICAL: Sales page crashes entirely due to missing imports — export-csv, input-search-sales unreachable.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Sales.js", "issue": "Page crashes with React ErrorBoundary: missing imports — `useMemo` not imported from React (line 29), `API` constant not imported from ../lib/api (line 40), `Search` icon (line 96) and `Download` icon (line 79) not imported from lucide-react. Result: entire Sales page renders blank/black; export-csv button and input-search-sales never mount.", "selector": "[data-testid=\"export-csv\"], [data-testid=\"input-search-sales\"]", "priority": "CRITICAL"}
+    ],
+    "integration_issues": [
+      {"flow": "Sales CSV export + search", "issue": "Cannot be exercised because Sales component throws on render. Backend /api/sales/export.csv works (verified by pytest).", "affected_selectors": ["[data-testid=\"export-csv\"]", "[data-testid=\"input-search-sales\"]"]}
+    ],
+    "design_issues": [
+      {"screen": "Dashboard", "issues": ["Recharts width(-1)/height(-1) warning still emitted briefly on first mount (non-blocking, carried over from iter 1-2)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration3.py",
+    "/app/backend/tests/test_iteration2.py",
+    "/app/backend/tests/test_backend.py",
+    "/app/test_reports/pytest/pytest_iteration3.xml"
+  ],
+  "action_items": [
+    "Fix /app/frontend/src/pages/Sales.js imports: add `useMemo` to React import; add `import { API } from '../lib/api';` (or destructure from default import); add `Search` and `Download` to lucide-react imports.",
+    "Re-test Sales page after fix: confirm sales-list renders, export-csv downloads ventas_YYYY-MM-DD.csv blob, input-search-sales filters by product name and seller name."
+  ],
+  "critical_code_review_comments": [
+    "Sales.js uses `useMemo`, `API`, `Search`, `Download` without importing them — this is a pre-merge oversight. A simple ESLint/no-undef pass would have caught this. Recommend adding lint to the CI / pre-commit.",
+    "Sales.js exportCsv hits `${API}/sales/export.csv` with manual fetch + Authorization header; the rest of the app uses the `api` axios client. For consistency and to share interceptors, prefer api.get with responseType: 'blob'.",
+    "server.py is now ~870 lines; growing past the 700-line guideline. Split into modules (auth, groups, members, products, sales, incidents, files, dashboard) — flagged in iter 2 still pending.",
+    "/api/dashboard re-fetches and iterates all_products multiple times in Python for every bucket; could be a single Mongo $facet aggregation as the dataset grows.",
+    "CSV export builds rows with simple .replace('\"',\"'\") quoting — does not escape embedded newlines or commas in unquoted columns (Fecha/Categoría/numeric cols are safe; producto/vendedor are quoted). Consider Python's csv module for safety.",
+    "POST /products still loops insert_one N times when cantidad>1 — recommend insert_many (flagged in iter 2)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration3.py (new)"],
+  "success_rate": {"backend": "100% (19/19 iter3 + 53/53 iter1+iter2 still passing)", "frontend": "~85% — all flows OK except Sales page entirely broken (export-csv + input-search-sales blocked)"},
+  "test_credentials": "Tests register fresh users (test_it3_<uuid>@test.com / password123).",
+  "seed_data_creation": "Per-run users + group TEST_IT3_Group; group is cascade-deleted at end of test_iteration3.py (test_cleanup_delete_group). Frontend playwright test creates TEST_IT3_FE group + two users (it3_a_*, it3_b_*) — left in DB (no cleanup endpoint exercised in UI flow).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter3 backend tests: /app/backend/tests/test_iteration3.py — single-file pytest module, scenario fixture (creator A + member B + admin_menor C + admin_total D). Run: REACT_APP_BACKEND_URL=<url> pytest /app/backend/tests/test_iteration3.py -v. The Sales.js missing-imports bug is the only blocker — once fixed, retest export-csv (Blob download) and input-search-sales filter. Dashboard vendor-* chips correctly only appear when members.length>1 (verified by registering UserB and joining same group). Members.input-objetivo correctly hidden for non-admin.",
+  "rca of the issue": "Sales.js missing imports — the file uses `useMemo`, `API`, `Search`, `Download` identifiers that are never imported. React's error boundary catches the ReferenceError at render time and unmounts the component, leaving the page blank with a console warning 'An error occurred in the <Sales> component'. Reproduction: log in, register a sale, navigate to /app/ventas. Mitigation: add the missing imports in /app/frontend/src/pages/Sales.js lines 1-3 — `import React, { useEffect, useMemo, useState } from 'react';` `import { Receipt, AlertCircle, Loader2, Trophy, BarChart3, Search, Download } from 'lucide-react';` and `import api, { API, buildFileUrl } from '../lib/api';`."
+}

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Crown, Shield, ShieldCheck, User as UserIcon, Trash2, Loader2, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Crown, Shield, ShieldCheck, User as UserIcon, Trash2, Loader2, AlertTriangle, Target, Check } from "lucide-react";
 import api from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "sonner";
@@ -14,17 +14,20 @@ const ROLE_META = {
 
 export default function Members() {
   const navigate = useNavigate();
-  const { user, checkAuth, logout } = useAuth();
+  const { user, checkAuth } = useAuth();
   const [members, setMembers] = useState([]);
   const [group, setGroup] = useState(null);
   const [loading, setLoading] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [objetivo, setObjetivo] = useState("");
+  const [savingObjetivo, setSavingObjetivo] = useState(false);
 
   const refresh = async () => {
     setLoading(true);
     try {
       const [m, g] = await Promise.all([api.get("/groups/members"), api.get("/groups/me")]);
       setMembers(m.data); setGroup(g.data);
+      setObjetivo(String(g.data?.objetivo_mensual || 0));
     } finally { setLoading(false); }
   };
 
@@ -62,8 +65,18 @@ export default function Members() {
   };
 
   const leaveGroup = async () => {
-    // member self-leaves by calling the remove endpoint? We don't have a self-leave. We can implement quick logout-like by calling DELETE on self. Backend rejects self-remove. Skip for now; show note instead.
     toast.info("Pide a un administrador que te elimine del grupo");
+  };
+
+  const saveObjetivo = async () => {
+    setSavingObjetivo(true);
+    try {
+      await api.put("/groups", { objetivo_mensual: parseFloat(objetivo) || 0 });
+      toast.success("Objetivo actualizado");
+      refresh();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Error");
+    } finally { setSavingObjetivo(false); }
   };
 
   const ROLE_OPTIONS = isCreator
@@ -93,6 +106,43 @@ export default function Members() {
             onClick={() => { navigator.clipboard.writeText(group.codigo_union); toast.success("Código copiado"); }}
             className="px-3 py-2 rounded-lg bg-white text-black text-xs font-medium hover:bg-white/90"
           >Copiar</button>
+        </div>
+      )}
+
+      {/* Monthly target */}
+      {canManage ? (
+        <div className="mb-6 p-4 rounded-2xl border border-white/10 bg-[#141414]">
+          <div className="flex items-center gap-2 text-white/60 text-[11px] tracking-[0.2em] uppercase mb-3">
+            <Target size={13}/> Objetivo mensual del equipo
+          </div>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 text-sm">€</span>
+              <input
+                data-testid="input-objetivo"
+                type="number" min="0" step="100"
+                value={objetivo} onChange={e=>setObjetivo(e.target.value)}
+                placeholder="0"
+                className="w-full pl-7 pr-3 py-2.5 rounded-lg bg-white/5 border border-white/10 focus:border-white/30 outline-none text-sm"
+              />
+            </div>
+            <button
+              data-testid="save-objetivo"
+              onClick={saveObjetivo}
+              disabled={savingObjetivo}
+              className="px-4 py-2.5 rounded-lg bg-white text-black text-sm font-medium hover:bg-white/90 disabled:opacity-60 flex items-center gap-1.5"
+            >
+              <Check size={14}/> Guardar
+            </button>
+          </div>
+          <p className="text-[11px] text-white/40 mt-2">Se mostrará una barra de progreso en el Dashboard</p>
+        </div>
+      ) : group?.objetivo_mensual > 0 && (
+        <div className="mb-6 p-4 rounded-2xl border border-white/10 bg-[#141414] flex items-center justify-between">
+          <div className="flex items-center gap-2 text-white/60 text-[11px] tracking-[0.2em] uppercase">
+            <Target size={13}/> Objetivo del mes
+          </div>
+          <p className="font-display text-lg font-semibold">{new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(group.objetivo_mensual)}</p>
         </div>
       )}
 

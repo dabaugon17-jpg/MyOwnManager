@@ -13,6 +13,7 @@ export default function Sales() {
   const [incTarget, setIncTarget] = useState(null);
   const [motivo, setMotivo] = useState("");
   const [view, setView] = useState("list"); // list | rank
+  const [search, setSearch] = useState("");
 
   const refresh = async () => {
     setLoading(true);
@@ -24,6 +25,32 @@ export default function Sales() {
   };
 
   useEffect(() => { refresh(); }, []);
+
+  const filteredSales = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return sales;
+    return sales.filter(s =>
+      s.nombre?.toLowerCase().includes(q) || s.sold_by_name?.toLowerCase().includes(q)
+    );
+  }, [sales, search]);
+
+  const exportCsv = async () => {
+    try {
+      const token = localStorage.getItem("session_token");
+      const r = await fetch(`${API}/sales/export.csv`, {
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error("Error");
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `ventas_${new Date().toISOString().slice(0,10)}.csv`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      toast.success("CSV descargado");
+    } catch { toast.error("No se pudo exportar"); }
+  };
 
   const confirmIncidencia = async () => {
     if (!incTarget) return;
@@ -39,20 +66,42 @@ export default function Sales() {
 
   return (
     <div className="px-4 md:px-8 pt-6 pb-32 max-w-3xl mx-auto fade-up">
-      <header className="mb-6">
-        <p className="text-[11px] tracking-[0.3em] uppercase text-white/40">Histórico</p>
-        <h1 className="font-display text-3xl md:text-4xl font-semibold mt-1">Ventas</h1>
+      <header className="flex items-end justify-between mb-6">
+        <div>
+          <p className="text-[11px] tracking-[0.3em] uppercase text-white/40">Histórico</p>
+          <h1 className="font-display text-3xl md:text-4xl font-semibold mt-1">Ventas</h1>
+        </div>
+        {sales.length > 0 && (
+          <button
+            data-testid="export-csv"
+            onClick={exportCsv}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-white/10 text-xs text-white/70 hover:bg-white/5 hover:border-white/20"
+          ><Download size={13}/> CSV</button>
+        )}
       </header>
 
-      <div className="flex gap-1 p-1 bg-white/5 rounded-lg w-fit mb-5">
-        <button data-testid="view-list" onClick={() => setView("list")}
-          className={`px-4 py-1.5 text-xs rounded-md transition-colors flex items-center gap-1.5 ${view === "list" ? "bg-white text-black" : "text-white/60"}`}>
-          <Receipt size={13}/> Lista
-        </button>
-        <button data-testid="view-rank" onClick={() => setView("rank")}
-          className={`px-4 py-1.5 text-xs rounded-md transition-colors flex items-center gap-1.5 ${view === "rank" ? "bg-white text-black" : "text-white/60"}`}>
-          <BarChart3 size={13}/> Ranking
-        </button>
+      <div className="flex flex-wrap items-center gap-2 mb-5">
+        <div className="flex gap-1 p-1 bg-white/5 rounded-lg">
+          <button data-testid="view-list" onClick={() => setView("list")}
+            className={`px-4 py-1.5 text-xs rounded-md transition-colors flex items-center gap-1.5 ${view === "list" ? "bg-white text-black" : "text-white/60"}`}>
+            <Receipt size={13}/> Lista
+          </button>
+          <button data-testid="view-rank" onClick={() => setView("rank")}
+            className={`px-4 py-1.5 text-xs rounded-md transition-colors flex items-center gap-1.5 ${view === "rank" ? "bg-white text-black" : "text-white/60"}`}>
+            <BarChart3 size={13}/> Ranking
+          </button>
+        </div>
+        {view === "list" && sales.length > 0 && (
+          <div className="relative flex-1 min-w-[150px]">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40"/>
+            <input
+              data-testid="input-search-sales"
+              value={search} onChange={e=>setSearch(e.target.value)}
+              placeholder="Buscar..."
+              className="w-full pl-9 pr-3 py-2 rounded-lg bg-white/5 border border-white/10 focus:border-white/30 outline-none text-sm"
+            />
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -97,9 +146,11 @@ export default function Sales() {
           <Receipt className="mx-auto text-white/30 mb-3" size={28}/>
           <p className="text-white/50 text-sm">Aún no has registrado ventas</p>
         </div>
+      ) : filteredSales.length === 0 ? (
+        <div className="text-center py-16 text-white/40 text-sm">Sin resultados.</div>
       ) : (
         <div data-testid="sales-list" className="divide-y divide-white/10 border border-white/10 rounded-2xl overflow-hidden bg-[#141414]">
-          {sales.map(s => {
+          {filteredSales.map(s => {
             const margin = (s.precio_venta || 0) - (s.precio_compra || 0);
             const marginPct = s.precio_compra ? (margin / s.precio_compra) * 100 : 0;
             const img = buildFileUrl(s.foto_url);

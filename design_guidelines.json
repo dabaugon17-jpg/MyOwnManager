@@ -1,0 +1,96 @@
+{
+  "theme": "dark",
+  "archetype": "Luxury / Swiss High-Contrast (Dark Mode)",
+  "core_principles": [
+    "Mobile-first bottom navigation is strictly adhered to, using glassmorphism for depth.",
+    "Bento grid for dashboard data to maintain a rigid, technical, yet premium feel.",
+    "True obsidian black backgrounds (#0A0A0A) rather than standard greys to convey a premium 'pro' tool.",
+    "High contrast purely via black and white; semantic colors (green/red) reserved strictly for data meaning (profits vs incidents)."
+  ],
+  "colors": {
+    "background": "#0A0A0A",
+    "surface": "#141414",
+    "surface_glass": "rgba(255, 255, 255, 0.03)",
+    "border": "rgba(255, 255, 255, 0.1)",
+    "primary": "#FFFFFF",
+    "primary_foreground": "#000000",
+    "secondary": "#27272A",
+    "text_primary": "#FFFFFF",
+    "text_secondary": "#A1A1AA",
+    "profit_green": "#10B981",
+    "profit_green_bg": "rgba(16, 185, 129, 0.15)",
+    "incident_red": "#EF4444",
+    "incident_red_bg": "rgba(239, 68, 68, 0.15)"
+  },
+  "typography": {
+    "heading_font": "Outfit",
+    "body_font": "IBM Plex Sans",
+    "h1": "text-4xl tracking-tight font-semibold",
+    "h2": "text-2xl tracking-tight font-medium",
+    "h3": "text-xl font-medium",
+    "body": "text-base text-[#A1A1AA] leading-relaxed",
+    "overline": "text-xs tracking-[0.2em] uppercase font-bold text-[#A1A1AA]"
+  },
+  "layout_spacing": {
+    "padding_standard": "p-4 md:p-6",
+    "gap_standard": "gap-4 md:gap-6",
+    "border_radius_card": "rounded-2xl",
+    "border_radius_button": "rounded-lg"
+  },
+  "components": {
+    "bottom_navigation": {
+      "style": "fixed bottom-0 left-0 w-full z-50 backdrop-blur-xl bg-[#0A0A0A]/80 border-t border-white/10 pb-safe",
+      "interaction": "Active tab gets high contrast white icon/text, inactive gets muted gray."
+    },
+    "kpi_card": {
+      "style": "bg-[#141414] border border-white/10 rounded-2xl p-5 flex flex-col justify-between"
+    },
+    "product_card": {
+      "style": "bg-[#141414] border border-white/10 rounded-2xl overflow-hidden flex flex-col relative",
+      "image_container": "aspect-square w-full bg-[#0A0A0A] relative",
+      "vender_button": "mt-auto w-full bg-white text-black py-3 font-semibold text-sm hover:bg-gray-200 transition-colors"
+    },
+    "fab": {
+      "style": "fixed bottom-24 right-4 z-40 w-14 h-14 bg-white text-black rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(255,255,255,0.2)] hover:scale-105 transition-transform"
+    },
+    "list_item": {
+      "style": "flex items-center justify-between py-4 border-b border-white/10 last:border-0"
+    },
+    "incidencia_button": {
+      "style": "bg-red-500/10 text-red-500 border border-red-500/20 px-3 py-1.5 rounded text-xs font-semibold hover:bg-red-500/20"
+    }
+  },
+  "testing": {
+    "requirements": "All interactive elements (buttons, inputs, tabs, FAB) MUST have a data-testid attribute."
+  },
+  "media": {
+    "images": [
+      {
+        "category": "inventory_mock",
+        "description": "MacBook Pro Silver",
+        "url": "https://images.unsplash.com/photo-1611186871348-b1ce696e52c9?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNDR8MHwxfHNlYXJjaHwxfHxtYWNib29rJTIwcHJvJTIwc3R1ZGlvJTIwbGlnaHRpbmd8ZW58MHx8fHwxNzc5ODk1NTY0fDA&ixlib=rb-4.1.0&q=85"
+      },
+      {
+        "category": "inventory_mock",
+        "description": "iPhone 15 Pro Titanium",
+        "url": "https://images.unsplash.com/photo-1695822822491-d92cee704368?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxOTF8MHwxfHNlYXJjaHwxfHxpcGhvbmUlMjAxNSUyMHBybyUyMHRpdGFuaXVtJTIwZGFya3xlbnwwfHx8fDE3Nzk4OTU1NjR8MA&ixlib=rb-4.1.0&q=85"
+      },
+      {
+        "category": "inventory_mock",
+        "description": "Luxury Black Leather Bag",
+        "url": "https://images.unsplash.com/photo-1548036328-c9fa89d128fa?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2OTF8MHwxfHNlYXJjaHwxfHxsdXh1cnklMjBibGFjayUyMGxlYXRoZXIlMjBiYWd8ZW58MHx8fHwxNzc5ODk1NTY0fDA&ixlib=rb-4.1.0&q=85"
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Implement the UI exclusively using React.js and Tailwind CSS (no .tsx files).",
+    "Use Phosphor Icons or Lucide React for modern, crisp iconography.",
+    "The login screen should include both 'Google OAuth' and 'Email/Password' flows, along with a state for 'Join Group via Code'. Use glassmorphic panels for the auth forms.",
+    "Dashboard must contain 3 KPI cards (Total Revenue, Net Profit, Investment) and a Recharts/Shadcn bar chart with Day/Week/Month/Year filters.",
+    "For the bottom nav bar, use a fixed position at the bottom and ensure the body has sufficient bottom padding (pb-24) so content isn't obscured.",
+    "Ensure 'VENDIDO' button in the inventory grid is highly prominent (White background, black text).",
+    "Ensure the 'data-testid' attributes are strictly applied to tabs, forms, and buttons as per requirements.",
+    "In the sales view, profit margin must be distinctly styled in green (#10B981).",
+    "Ensure the application layout handles both Mobile (bottom nav) and Desktop (bottom nav can remain fixed or adapt, but mobile-first is the priority here)."
+  ]
+}

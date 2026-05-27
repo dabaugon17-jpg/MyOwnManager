@@ -98,14 +98,27 @@ class ProductCreateIn(BaseModel):
     precio_compra: float
     foto_url: Optional[str] = None
     file_id: Optional[str] = None
+    cantidad: int = 1
 
 
 class SellIn(BaseModel):
     precio_venta: float
+    vendedor_id: Optional[str] = None
 
 
 class IncidenciaIn(BaseModel):
     motivo: str
+
+
+class IncidenciaUpdateIn(BaseModel):
+    motivo: str
+
+
+class RoleUpdateIn(BaseModel):
+    role: str  # creator | admin_total | admin_menor | member
+
+
+VALID_ROLES = {"creator", "admin_total", "admin_menor", "member"}
 
 
 # ----------------- Auth helpers -----------------
@@ -291,7 +304,10 @@ async def create_group(payload: CreateGroupIn, user: dict = Depends(get_current_
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.grupos.insert_one(group_doc)
-    await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"codigo_grupo": code}})
+    await db.users.update_one(
+        {"user_id": user["user_id"]},
+        {"$set": {"codigo_grupo": code, "role": "creator"}},
+    )
     group_doc.pop("_id", None)
     return group_doc
 
@@ -303,7 +319,10 @@ async def join_group(payload: JoinGroupIn, user: dict = Depends(get_current_user
     group = await db.grupos.find_one({"codigo_union": payload.codigo_union.upper().strip()}, {"_id": 0})
     if not group:
         raise HTTPException(status_code=404, detail="Código de grupo no encontrado")
-    await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"codigo_grupo": group["codigo_union"]}})
+    await db.users.update_one(
+        {"user_id": user["user_id"]},
+        {"$set": {"codigo_grupo": group["codigo_union"], "role": "member"}},
+    )
     return group
 
 
@@ -321,6 +340,90 @@ def require_group(user: dict) -> str:
     if not user.get("codigo_grupo"):
         raise HTTPException(status_code=400, detail="Debes unirte o crear un grupo")
     return user["codigo_grupo"]
+
+
+def get_role(user: dict) -> str:
+    return user.get("role") or "member"
+
+
+def can_edit_incidencias(role: str) -> bool:
+    return role in ("creator", "admin_total", "admin_menor")
+
+
+def can_manage_members(role: str) -> bool:
+    return role in ("creator", "admin_total")
+
+
+# ----------------- Members management -----------------
+@api_router.get("/groups/members")
+async def list_members(user: dict = Depends(get_current_user)):
+    grupo = require_group(user)
+    members = await db.users.find(
+        {"codigo_grupo": grupo},
+        {"_id": 0, "password_hash": 0},
+    ).to_list(500)
+    group = await db.grupos.find_one({"codigo_union": grupo}, {"_id": 0})
+    creator_id = group.get("admin_id") if group else None
+    for m in members:
+        m["role"] = m.get("role") or "member"
+        m["is_owner"] = (m["user_id"] == creator_id)
+    return members
+
+
+@api_router.put("/groups/members/{user_id}/role")
+async def update_member_role(user_id: str, payload: RoleUpdateIn, user: dict = Depends(get_current_user)):
+    grupo = require_group(user)
+    if payload.role not in VALID_ROLES:
+        raise HTTPException(status_code=400, detail="Rol inválido")
+    actor_role = get_role(user)
+    if not can_manage_members(actor_role):
+        raise HTTPException(status_code=403, detail="Sin permisos para gestionar miembros")
+    target = await db.users.find_one({"user_id": user_id, "codigo_grupo": grupo}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="Miembro no encontrado")
+    if target["user_id"] == user["user_id"]:
+        raise HTTPException(status_code=400, detail="No puedes cambiar tu propio rol")
+    # Only creator can promote to creator
+    if payload.role == "creator" and actor_role != "creator":
+        raise HTTPException(status_code=403, detail="Solo el creador puede nombrar a otro creador")
+    # Only creator can demote a creator
+    if target.get("role") == "creator" and actor_role != "creator":
+        raise HTTPException(status_code=403, detail="Solo otro creador puede cambiar el rol del creador")
+    await db.users.update_one({"user_id": user_id}, {"$set": {"role": payload.role}})
+    return {"ok": True, "user_id": user_id, "role": payload.role}
+
+
+@api_router.delete("/groups/members/{user_id}")
+async def remove_member(user_id: str, user: dict = Depends(get_current_user)):
+    grupo = require_group(user)
+    actor_role = get_role(user)
+    if not can_manage_members(actor_role):
+        raise HTTPException(status_code=403, detail="Sin permisos")
+    target = await db.users.find_one({"user_id": user_id, "codigo_grupo": grupo}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="Miembro no encontrado")
+    if target["user_id"] == user["user_id"]:
+        raise HTTPException(status_code=400, detail="No puedes eliminarte a ti mismo")
+    if target.get("role") == "creator" and actor_role != "creator":
+        raise HTTPException(status_code=403, detail="Solo otro creador puede expulsar a un creador")
+    await db.users.update_one({"user_id": user_id}, {"$set": {"codigo_grupo": None, "role": None}})
+    return {"ok": True}
+
+
+@api_router.delete("/groups")
+async def delete_group(user: dict = Depends(get_current_user)):
+    grupo = require_group(user)
+    group = await db.grupos.find_one({"codigo_union": grupo}, {"_id": 0})
+    if not group:
+        raise HTTPException(status_code=404, detail="Grupo no encontrado")
+    if group.get("admin_id") != user["user_id"]:
+        raise HTTPException(status_code=403, detail="Solo el creador original puede eliminar el grupo")
+    # Cascade delete
+    await db.productos.delete_many({"codigo_grupo": grupo})
+    await db.incidencias.delete_many({"codigo_grupo": grupo})
+    await db.users.update_many({"codigo_grupo": grupo}, {"$set": {"codigo_grupo": None, "role": None}})
+    await db.grupos.delete_one({"codigo_union": grupo})
+    return {"ok": True}
 
 
 # ----------------- Files -----------------
@@ -391,21 +494,29 @@ async def create_product(payload: ProductCreateIn, user: dict = Depends(get_curr
     foto_url = payload.foto_url
     if payload.file_id:
         foto_url = f"/api/files/{payload.file_id}"
-    doc = {
-        "product_id": f"prod_{uuid.uuid4().hex[:10]}",
-        "nombre": payload.nombre,
-        "precio_compra": float(payload.precio_compra),
-        "precio_venta": None,
-        "estado": "inventario",
-        "foto_url": foto_url,
-        "file_id": payload.file_id,
-        "codigo_grupo": grupo,
-        "created_by": user["user_id"],
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "sold_at": None,
-    }
-    await db.productos.insert_one(doc)
-    return clean(doc)
+    cantidad = max(1, min(int(payload.cantidad or 1), 500))
+    now = datetime.now(timezone.utc).isoformat()
+    created = []
+    for i in range(1, cantidad + 1):
+        name = payload.nombre if cantidad == 1 else f"{payload.nombre} #{i}"
+        doc = {
+            "product_id": f"prod_{uuid.uuid4().hex[:10]}",
+            "nombre": name,
+            "precio_compra": float(payload.precio_compra),
+            "precio_venta": None,
+            "estado": "inventario",
+            "foto_url": foto_url,
+            "file_id": payload.file_id,
+            "codigo_grupo": grupo,
+            "created_by": user["user_id"],
+            "created_at": now,
+            "sold_at": None,
+            "batch_index": i,
+            "batch_total": cantidad,
+        }
+        await db.productos.insert_one(doc)
+        created.append(clean(dict(doc)))
+    return {"created": len(created), "products": created}
 
 
 @api_router.put("/products/{product_id}/sell")
@@ -416,6 +527,10 @@ async def sell_product(product_id: str, payload: SellIn, user: dict = Depends(ge
         raise HTTPException(status_code=404, detail="Producto no encontrado")
     if prod["estado"] != "inventario":
         raise HTTPException(status_code=400, detail="Producto no disponible")
+    vendedor_id = payload.vendedor_id or user["user_id"]
+    vendedor = await db.users.find_one({"user_id": vendedor_id, "codigo_grupo": grupo}, {"_id": 0})
+    if not vendedor:
+        raise HTTPException(status_code=400, detail="Vendedor no encontrado en el grupo")
     now = datetime.now(timezone.utc).isoformat()
     await db.productos.update_one(
         {"product_id": product_id},
@@ -423,7 +538,9 @@ async def sell_product(product_id: str, payload: SellIn, user: dict = Depends(ge
             "estado": "vendido",
             "precio_venta": float(payload.precio_venta),
             "sold_at": now,
-            "sold_by": user["user_id"],
+            "sold_by": vendedor_id,
+            "sold_by_name": vendedor.get("name"),
+            "registered_by": user["user_id"],
         }},
     )
     prod = await db.productos.find_one({"product_id": product_id}, {"_id": 0})
@@ -471,11 +588,64 @@ async def list_sales(user: dict = Depends(get_current_user)):
     return docs
 
 
+@api_router.get("/sales/stats")
+async def sales_stats(user: dict = Depends(get_current_user)):
+    grupo = require_group(user)
+    sold = await db.productos.find(
+        {"codigo_grupo": grupo, "estado": "vendido"}, {"_id": 0}
+    ).to_list(5000)
+    by_member: dict = {}
+    for p in sold:
+        uid = p.get("sold_by") or "unknown"
+        name = p.get("sold_by_name") or "Sin nombre"
+        if uid not in by_member:
+            by_member[uid] = {
+                "user_id": uid, "name": name,
+                "ventas": 0, "facturacion": 0.0, "beneficio": 0.0,
+            }
+        by_member[uid]["ventas"] += 1
+        by_member[uid]["facturacion"] += p.get("precio_venta") or 0
+        by_member[uid]["beneficio"] += (p.get("precio_venta") or 0) - (p.get("precio_compra") or 0)
+    members = list(by_member.values())
+    for m in members:
+        m["facturacion"] = round(m["facturacion"], 2)
+        m["beneficio"] = round(m["beneficio"], 2)
+    members.sort(key=lambda x: x["facturacion"], reverse=True)
+    return {"members": members}
+
+
 @api_router.get("/incidents")
 async def list_incidents(user: dict = Depends(get_current_user)):
     grupo = require_group(user)
     docs = await db.incidencias.find({"codigo_grupo": grupo}, {"_id": 0}).sort("created_at", -1).to_list(2000)
     return docs
+
+
+@api_router.put("/incidents/{incidencia_id}")
+async def update_incident(incidencia_id: str, payload: IncidenciaUpdateIn, user: dict = Depends(get_current_user)):
+    grupo = require_group(user)
+    if not can_edit_incidencias(get_role(user)):
+        raise HTTPException(status_code=403, detail="Solo administradores pueden editar incidencias")
+    inc = await db.incidencias.find_one({"incidencia_id": incidencia_id, "codigo_grupo": grupo})
+    if not inc:
+        raise HTTPException(status_code=404, detail="Incidencia no encontrada")
+    await db.incidencias.update_one(
+        {"incidencia_id": incidencia_id},
+        {"$set": {"motivo": payload.motivo, "updated_at": datetime.now(timezone.utc).isoformat(), "updated_by": user["user_id"]}},
+    )
+    inc = await db.incidencias.find_one({"incidencia_id": incidencia_id}, {"_id": 0})
+    return inc
+
+
+@api_router.delete("/incidents/{incidencia_id}")
+async def delete_incident(incidencia_id: str, user: dict = Depends(get_current_user)):
+    grupo = require_group(user)
+    if not can_edit_incidencias(get_role(user)):
+        raise HTTPException(status_code=403, detail="Solo administradores pueden eliminar incidencias")
+    res = await db.incidencias.delete_one({"incidencia_id": incidencia_id, "codigo_grupo": grupo})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Incidencia no encontrada")
+    return {"ok": True}
 
 
 # ----------------- Dashboard -----------------

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { TrendingUp, Wallet, PiggyBank, LogOut } from "lucide-react";
+import { TrendingUp, Wallet, PiggyBank, LogOut, Users } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from "recharts";
 import api from "../lib/api";
 import { useAuth } from "../context/AuthContext";
@@ -41,9 +41,19 @@ export default function Dashboard() {
           <p className="text-[11px] tracking-[0.3em] uppercase text-white/40">{group?.nombre_negocio || "Tu negocio"}</p>
           <h1 className="font-display text-3xl md:text-4xl font-semibold mt-1">Hola, {user?.name?.split(" ")[0] || "👋"}</h1>
         </div>
-        <button data-testid="logout-btn" onClick={onLogout} className="p-2 rounded-lg hover:bg-white/5 text-white/60 hover:text-white">
-          <LogOut size={18}/>
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            data-testid="members-btn"
+            onClick={() => navigate("/app/miembros")}
+            className="p-2 rounded-lg hover:bg-white/5 text-white/60 hover:text-white"
+            aria-label="Miembros"
+          >
+            <Users size={18}/>
+          </button>
+          <button data-testid="logout-btn" onClick={onLogout} className="p-2 rounded-lg hover:bg-white/5 text-white/60 hover:text-white">
+            <LogOut size={18}/>
+          </button>
+        </div>
       </header>
 
       <section data-testid="kpi-section" className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">

@@ -11,6 +11,7 @@ import Dashboard from "./pages/Dashboard";
 import Inventory from "./pages/Inventory";
 import Sales from "./pages/Sales";
 import Incidents from "./pages/Incidents";
+import Members from "./pages/Members";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AuthCallback from "./components/AuthCallback";
 
@@ -36,6 +37,7 @@ function Router() {
         <Route path="inventario" element={<Inventory />} />
         <Route path="ventas" element={<Sales />} />
         <Route path="incidencias" element={<Incidents />} />
+        <Route path="miembros" element={<Members />} />
       </Route>
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>

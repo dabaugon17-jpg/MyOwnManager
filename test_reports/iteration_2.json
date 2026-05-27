@@ -1,0 +1,40 @@
+{
+  "summary": "Iteration 2 testing complete. Backend: 53/53 pytest passing (27 new tests in test_iteration2.py + 26 iteration-1 tests after fixing API contract regression). Frontend: 9-step E2E flow passes — cantidad=3 creates 3 batched cards (#1/#2/#3); sell modal shows select-vendedor; Sales page shows view-list/view-rank tabs with rank-list populated by sold_by_name aggregation; sale row shows seller name; Members page accessible via members-btn; creator sees delete-group-btn and edit/delete incident buttons; member (joined via codigo_union) correctly sees no delete-group, no set-role-*, no remove-*, no edit-inc/delete-inc.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard", "issues": ["Recharts emits 'width(-1) height(-1)' warning briefly on first mount before container measures (carried over from iteration 1, non-blocking)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration2.py",
+    "/app/backend/tests/test_backend.py",
+    "/app/test_reports/pytest/pytest_iteration2.xml",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now 759 lines — past the 700-line guideline. Recommend splitting into modules (auth, groups, members, products, sales, incidents, files, dashboard).",
+    "GET /api/sales/stats fetches up to 5000 products into memory and aggregates in Python; should be a Mongo $group aggregation pipeline as volume grows.",
+    "POST /api/products with cantidad runs N separate insert_one calls in a loop; use insert_many for atomicity and perf when cantidad is large (capped at 500).",
+    "Role permission checks are repeated; consider extracting a decorator/dependency `require_role([...])` to DRY up endpoints.",
+    "DELETE /api/groups cascades products + incidencias + clears user codigo_grupo/role but does not delete uploaded files in object storage; orphaned files remain.",
+    "/api/groups/members/{id}/role check order: creator-demotion check is after self-check but before promotion-to-creator check is fine; however target.get('role') may be None (legacy users), so comparing == 'creator' is safe but consider normalizing on read."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration2.py (new)",
+    "/app/backend/tests/test_backend.py (fixed POST /products contract: now {created, products[]})"
+  ],
+  "success_rate": {"backend": "100% (53/53)", "frontend": "100% (all new flows: cantidad, vendedor, rank tabs, members page, role-based UI gating, incident edit)"},
+  "test_credentials": "Tests register fresh users per run; existing demo1@test.com / password123 is unused.",
+  "seed_data_creation": "Per-run users prefixed with test_it2_<uuid> and test_a/b_<uuid>; groups/products prefixed TEST_. Group is cascade-deleted at end of test_iteration2.py suite.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 2 suite at /app/backend/tests/test_iteration2.py is a single-file pytest module with a session-scoped scenario fixture (creator A + members B/C + later D). Tests must run sequentially in declaration order (state mutates via scenario dict). To rerun: pytest /app/backend/tests/test_iteration2.py -v. Frontend BottomNav uses fixed position bottom-0; on certain timing windows clicking nav-* immediately after a route change can race against AppLayout mounting — prefer goto(url) over click for nav links in automated tests. Roles: creator (admin_id of group), admin_total, admin_menor, member.",
+  "rca of the issue": "n/a — no failures observed in this iteration."
+}

@@ -133,7 +133,9 @@ def test_create_product():
         payload["file_id"] = state["file_id"]
     r = requests.post(f"{API}/products", json=payload, headers=h)
     assert r.status_code == 200, r.text
-    p = r.json()
+    j = r.json()
+    assert j["created"] == 1
+    p = j["products"][0]
     assert p["estado"] == "inventario"
     assert p["precio_compra"] == 10.0
     state["product_id"] = p["product_id"]
@@ -172,7 +174,7 @@ def test_incidencia_create():
     # create a 2nd product, sell, then mark incidencia
     h = {"Authorization": f"Bearer {state['token_a']}"}
     r = requests.post(f"{API}/products", json={"nombre": "TEST_Prod2", "precio_compra": 5.0}, headers=h)
-    pid = r.json()["product_id"]
+    pid = r.json()["products"][0]["product_id"]
     requests.put(f"{API}/products/{pid}/sell", json={"precio_venta": 12.0}, headers=h)
     r = requests.post(f"{API}/products/{pid}/incidencia", json={"motivo": "Defecto"}, headers=h)
     assert r.status_code == 200

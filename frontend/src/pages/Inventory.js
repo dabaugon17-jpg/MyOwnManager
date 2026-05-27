@@ -1,16 +1,17 @@
 import React, { useEffect, useState } from "react";
-import { Plus, Camera, X, Loader2, Package } from "lucide-react";
+import { Plus, Camera, X, Loader2, Package, ChevronDown } from "lucide-react";
 import api, { buildFileUrl } from "../lib/api";
+import { useAuth } from "../context/AuthContext";
 import { toast } from "sonner";
 
 const fmt = (n) => new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(n || 0);
 
 export default function Inventory() {
   const [products, setProducts] = useState([]);
+  const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [sellTarget, setSellTarget] = useState(null);
-  const [sellPrice, setSellPrice] = useState("");
 
   const fetchProducts = async () => {
     setLoading(true);
@@ -19,20 +20,11 @@ export default function Inventory() {
       setProducts(data);
     } finally { setLoading(false); }
   };
-
-  useEffect(() => { fetchProducts(); }, []);
-
-  const confirmSell = async () => {
-    if (!sellTarget) return;
-    try {
-      await api.put(`/products/${sellTarget.product_id}/sell`, { precio_venta: parseFloat(sellPrice) });
-      toast.success(`${sellTarget.nombre} vendido`);
-      setSellTarget(null); setSellPrice("");
-      fetchProducts();
-    } catch (e) {
-      toast.error(e?.response?.data?.detail || "Error al vender");
-    }
+  const fetchMembers = async () => {
+    try { const { data } = await api.get("/groups/members"); setMembers(data); } catch {}
   };
+
+  useEffect(() => { fetchProducts(); fetchMembers(); }, []);
 
   return (
     <div className="px-4 md:px-8 pt-6 pb-32 max-w-5xl mx-auto">
@@ -51,7 +43,7 @@ export default function Inventory() {
       ) : (
         <div data-testid="product-grid" className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {products.map(p => (
-            <ProductCard key={p.product_id} product={p} onSell={() => { setSellTarget(p); setSellPrice(""); }} />
+            <ProductCard key={p.product_id} product={p} onSell={() => setSellTarget(p)} />
           ))}
         </div>
       )}
@@ -66,23 +58,13 @@ export default function Inventory() {
       </button>
 
       {showAdd && <AddProductModal onClose={() => setShowAdd(false)} onCreated={() => { setShowAdd(false); fetchProducts(); }} />}
-
       {sellTarget && (
-        <Modal onClose={() => setSellTarget(null)}>
-          <h3 className="font-display text-2xl font-semibold mb-1">Vender</h3>
-          <p className="text-white/50 text-sm mb-4">{sellTarget.nombre} · Compra: {fmt(sellTarget.precio_compra)}</p>
-          <input
-            data-testid="input-sell-price"
-            type="number" step="0.01" autoFocus
-            value={sellPrice} onChange={(e) => setSellPrice(e.target.value)}
-            placeholder="Precio de venta (€)"
-            className="w-full px-3 py-3 rounded-lg bg-white/5 border border-white/10 focus:border-white/30 outline-none mb-4"
-          />
-          <div className="flex gap-2">
-            <button data-testid="cancel-sell" onClick={() => setSellTarget(null)} className="flex-1 py-3 rounded-lg border border-white/10 hover:bg-white/5">Cancelar</button>
-            <button data-testid="confirm-sell" onClick={confirmSell} disabled={!sellPrice} className="flex-1 py-3 rounded-lg bg-white text-black font-medium hover:bg-white/90 disabled:opacity-50">Confirmar venta</button>
-          </div>
-        </Modal>
+        <SellModal
+          product={sellTarget}
+          members={members}
+          onClose={() => setSellTarget(null)}
+          onSold={() => { setSellTarget(null); fetchProducts(); }}
+        />
       )}
     </div>
   );
@@ -97,6 +79,11 @@ function ProductCard({ product, onSell }) {
           <img src={img} alt={product.nombre} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"/>
         ) : (
           <div className="w-full h-full flex items-center justify-center text-white/20"><Package size={40}/></div>
+        )}
+        {product.batch_total > 1 && (
+          <span className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/70 backdrop-blur text-[10px] tracking-wider">
+            {product.batch_index}/{product.batch_total}
+          </span>
         )}
       </div>
       <div className="p-3 flex flex-col gap-2 flex-1">
@@ -137,6 +124,7 @@ function Modal({ children, onClose }) {
 function AddProductModal({ onClose, onCreated }) {
   const [nombre, setNombre] = useState("");
   const [precio, setPrecio] = useState("");
+  const [cantidad, setCantidad] = useState(1);
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -158,8 +146,9 @@ function AddProductModal({ onClose, onCreated }) {
         const { data } = await api.post("/files/upload", fd, { headers: { "Content-Type": "multipart/form-data" } });
         file_id = data.file_id;
       }
-      await api.post("/products", { nombre, precio_compra: parseFloat(precio), file_id });
-      toast.success("Producto añadido");
+      const cant = Math.max(1, Math.min(parseInt(cantidad || 1, 10), 500));
+      const { data } = await api.post("/products", { nombre, precio_compra: parseFloat(precio), file_id, cantidad: cant });
+      toast.success(cant > 1 ? `${data.created} unidades añadidas` : "Producto añadido");
       onCreated();
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Error al añadir");
@@ -169,7 +158,7 @@ function AddProductModal({ onClose, onCreated }) {
   return (
     <Modal onClose={onClose}>
       <h3 className="font-display text-2xl font-semibold mb-1">Nuevo producto</h3>
-      <p className="text-white/50 text-sm mb-5">Añade un artículo a tu inventario</p>
+      <p className="text-white/50 text-sm mb-5">Si añades varias unidades, se numerarán automáticamente</p>
       <form onSubmit={submit} className="space-y-3">
         <label className="block">
           <span className="text-xs text-white/50 mb-1 block">Foto</span>
@@ -188,17 +177,100 @@ function AddProductModal({ onClose, onCreated }) {
           placeholder="Nombre del producto (ej. MacBook Pro 14)"
           className="w-full px-3 py-3 rounded-lg bg-white/5 border border-white/10 focus:border-white/30 outline-none text-sm"
         />
-        <input
-          data-testid="input-product-price"
-          required type="number" step="0.01" value={precio} onChange={e=>setPrecio(e.target.value)}
-          placeholder="Precio de compra (€)"
-          className="w-full px-3 py-3 rounded-lg bg-white/5 border border-white/10 focus:border-white/30 outline-none text-sm"
-        />
+        <div className="grid grid-cols-2 gap-3">
+          <input
+            data-testid="input-product-price"
+            required type="number" step="0.01" value={precio} onChange={e=>setPrecio(e.target.value)}
+            placeholder="Precio compra (€)"
+            className="w-full px-3 py-3 rounded-lg bg-white/5 border border-white/10 focus:border-white/30 outline-none text-sm"
+          />
+          <input
+            data-testid="input-product-cantidad"
+            required type="number" min="1" max="500" value={cantidad} onChange={e=>setCantidad(e.target.value)}
+            placeholder="Cantidad"
+            className="w-full px-3 py-3 rounded-lg bg-white/5 border border-white/10 focus:border-white/30 outline-none text-sm"
+          />
+        </div>
+        {cantidad > 1 && (
+          <p className="text-[11px] text-white/40 -mt-1">Se crearán {cantidad} unidades: {nombre || "Producto"} #1, #2, … #{cantidad}</p>
+        )}
         <button data-testid="submit-product" disabled={busy} type="submit"
           className="w-full py-3 bg-white text-black rounded-lg font-medium text-sm hover:bg-white/90 disabled:opacity-60">
           {busy ? "Subiendo..." : "Añadir al inventario"}
         </button>
       </form>
+    </Modal>
+  );
+}
+
+function SellModal({ product, members, onClose, onSold }) {
+  const { user } = useAuth();
+  const [precio, setPrecio] = useState("");
+  const [vendedor, setVendedor] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (vendedor) return;
+    const def = members.find(m => m.user_id === user?.user_id)?.user_id || members[0]?.user_id;
+    if (def) setVendedor(def);
+  }, [members, user, vendedor]);
+
+  const confirm = async () => {
+    setBusy(true);
+    try {
+      await api.put(`/products/${product.product_id}/sell`, {
+        precio_venta: parseFloat(precio),
+        vendedor_id: vendedor || undefined,
+      });
+      toast.success(`${product.nombre} vendido`);
+      onSold();
+    } catch (e) { toast.error(e?.response?.data?.detail || "Error al vender"); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Modal onClose={onClose}>
+      <h3 className="font-display text-2xl font-semibold mb-1">Registrar venta</h3>
+      <p className="text-white/50 text-sm mb-4">{product.nombre} · Compra: {fmt(product.precio_compra)}</p>
+
+      <label className="block mb-3">
+        <span className="text-[11px] tracking-[0.2em] uppercase text-white/50 mb-1.5 block">Precio de venta</span>
+        <input
+          data-testid="input-sell-price"
+          type="number" step="0.01" autoFocus
+          value={precio} onChange={(e) => setPrecio(e.target.value)}
+          placeholder="0,00 €"
+          className="w-full px-3 py-3 rounded-lg bg-white/5 border border-white/10 focus:border-white/30 outline-none"
+        />
+      </label>
+
+      <label className="block mb-5">
+        <span className="text-[11px] tracking-[0.2em] uppercase text-white/50 mb-1.5 block">Vendido por</span>
+        <div className="relative">
+          <select
+            data-testid="select-vendedor"
+            value={vendedor}
+            onChange={(e) => setVendedor(e.target.value)}
+            className="w-full appearance-none px-3 py-3 pr-9 rounded-lg bg-white/5 border border-white/10 focus:border-white/30 outline-none text-sm"
+          >
+            {members.length === 0 && <option value="">Cargando…</option>}
+            {members.map(m => (
+              <option key={m.user_id} value={m.user_id} className="bg-[#141414]">
+                {m.name || m.email}
+              </option>
+            ))}
+          </select>
+          <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-white/40"/>
+        </div>
+      </label>
+
+      <div className="flex gap-2">
+        <button data-testid="cancel-sell" onClick={onClose} className="flex-1 py-3 rounded-lg border border-white/10 hover:bg-white/5">Cancelar</button>
+        <button data-testid="confirm-sell" onClick={confirm} disabled={!precio || busy}
+          className="flex-1 py-3 rounded-lg bg-white text-black font-medium hover:bg-white/90 disabled:opacity-50">
+          {busy ? "..." : "Confirmar venta"}
+        </button>
+      </div>
     </Modal>
   );
 }

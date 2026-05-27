@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
-import { Receipt, AlertCircle, Loader2, Trophy, BarChart3 } from "lucide-react";
-import api, { buildFileUrl } from "../lib/api";
+import React, { useEffect, useMemo, useState } from "react";
+import { Receipt, AlertCircle, Loader2, Trophy, BarChart3, Download, Search } from "lucide-react";
+import api, { buildFileUrl, API } from "../lib/api";
 import { toast } from "sonner";
 
 const fmt = (n) => new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(n || 0);

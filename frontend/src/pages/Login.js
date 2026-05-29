@@ -60,18 +60,6 @@ export default function Login() {
     }
   };
 
-  const googleLogin = async () => {
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: { redirectTo: `${window.location.origin}/auth/callback` },
-      });
-      if (error) throw error;
-    } catch (err) {
-      toast.error(err?.message || "No se pudo iniciar Google");
-    }
-  };
-
   return (
     <div className="min-h-screen relative bg-[#0A0A0A] overflow-hidden">
       <div
@@ -152,21 +140,6 @@ export default function Login() {
                 <ChevronRight size={16} />
               </button>
             </form>
-
-            <div className="flex items-center gap-3 my-5">
-              <div className="flex-1 h-px bg-white/10" />
-              <span className="text-[10px] tracking-widest uppercase text-white/40">o continúa con</span>
-              <div className="flex-1 h-px bg-white/10" />
-            </div>
-
-            <button
-              data-testid="google-login"
-              onClick={googleLogin}
-              className="w-full py-3 rounded-lg border border-white/15 bg-white/[0.02] hover:bg-white/[0.06] text-sm font-medium flex items-center justify-center gap-2 transition-colors"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#fff" d="M21.35 11.1H12v3.2h5.35c-.23 1.45-1.7 4.25-5.35 4.25-3.22 0-5.85-2.66-5.85-5.95s2.63-5.95 5.85-5.95c1.83 0 3.06.78 3.77 1.45l2.57-2.49C16.97 3.95 14.7 3 12 3 6.99 3 3 6.99 3 12s3.99 9 9 9c5.2 0 8.65-3.65 8.65-8.78 0-.59-.06-1.04-.15-1.12z"/></svg>
-              Google
-            </button>
           </div>
 
           <p className="text-center text-xs text-white/30 mt-6">Acceso seguro · Sesiones encriptadas</p>

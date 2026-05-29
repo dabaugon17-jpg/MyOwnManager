@@ -4,6 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGri
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { getDashboard, getMyGroup, getGroupMembers } from "../lib/dataApi";
+import { useRealtime } from "../lib/useRealtime";
 
 const FILTERS = [
   { key: "day", label: "Día" },

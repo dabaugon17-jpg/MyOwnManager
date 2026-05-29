@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Authentication</title>
+</head>
+<body>
+    <h1>Test Registration</h1>
+    <div id="status">Testing...</div>
+    <script type="module">
+        // Test Supabase connection
+        import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+        const supabaseUrl = 'https://0ec90b57d6e95fcbda19832f.supabase.co';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJib2x0IiwicmVmIjoiMGVjOTBiNTdkNmU5NWZjYmRhMTk4MzJmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg4ODE1NzQsImV4cCI6MTc1ODg4MTU3NH0.9I8-U0x86Ak8t2DGaIk0HfvTSLsAyzdnz-Nw00mMkKw';
+
+        const supabase = createClient(supabaseUrl, supabaseKey);
+
+        async function testAuth() {
+            try {
+                // Test sign up
+                const testEmail = 'test_' + Date.now() + '@example.com';
+                const testPassword = 'test123456';
+                const testName = 'Test User';
+
+                const { data, error } = await supabase.auth.signUp({
+                    email: testEmail,
+                    password: testPassword,
+                    options: {
+                        data: {
+                            name: testName
+                        }
+                    }
+                });
+
+                if (error) throw error;
+
+                document.getElementById('status').innerHTML = `
+                    <h2 style="color: green;">SUCCESS!</h2>
+                    <p>User created:</p>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                    <p>Profile should be created automatically by the database trigger.</p>
+                `;
+
+                // Wait and check for profile
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                const { data: profile, error: profileError } = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .eq('id', data.user.id)
+                    .single();
+
+                if (profileError) {
+                    document.getElementById('status').innerHTML += `
+                        <h3 style="color: orange;">Profile Status:</h3>
+                        <p>Profile not found (this is expected if email confirmation is enabled):</p>
+                        <pre>${JSON.stringify(profileError, null, 2)}</pre>
+                    `;
+                } else {
+                    document.getElementById('status').innerHTML += `
+                        <h3 style="color: green;">Profile Created!</h3>
+                        <pre>${JSON.stringify(profile, null, 2)}</pre>
+                    `;
+                }
+
+            } catch (error) {
+                document.getElementById('status').innerHTML = `
+                    <h2 style="color: red;">ERROR</h2>
+                    <pre>${JSON.stringify(error, null, 2)}</pre>
+                `;
+            }
+        }
+
+        testAuth();
+    </script>
+</body>
+</html>

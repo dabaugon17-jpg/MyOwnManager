@@ -1,8 +1,8 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Mail, Lock, User, ChevronRight } from "lucide-react";
-import api from "../lib/api";
 import { useAuth } from "../context/AuthContext";
+import { signUp, signIn, signInWithGoogle, getUserProfile } from "../lib/supabase";
 import { toast } from "sonner";
 
 export default function Login() {
@@ -18,24 +18,52 @@ export default function Login() {
     e.preventDefault();
     setBusy(true);
     try {
-      const path = mode === "login" ? "/auth/login" : "/auth/register";
-      const payload = mode === "login" ? { email, password } : { email, password, name };
-      const { data } = await api.post(path, payload);
-      if (data?.session_token) localStorage.setItem("session_token", data.session_token);
-      setUser(data.user);
-      toast.success(mode === "login" ? "Bienvenido" : "Cuenta creada");
-      navigate(data.user?.codigo_grupo ? "/app/dashboard" : "/onboarding", { replace: true });
+      if (mode === "login") {
+        const data = await signIn(email, password);
+        if (data.user) {
+          const profile = await getUserProfile(data.user.id);
+          setUser(profile);
+          toast.success("Bienvenido");
+          navigate(profile?.codigo_grupo ? "/app/dashboard" : "/onboarding", { replace: true });
+        }
+      } else {
+        const data = await signUp(email, password, name);
+        if (data.user) {
+          // Wait for profile to be created by trigger
+          let profile = null;
+          let attempts = 0;
+          while (!profile && attempts < 10) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            try {
+              profile = await getUserProfile(data.user.id);
+            } catch (err) {
+              // Profile not yet created
+            }
+            attempts++;
+          }
+          if (profile) {
+            setUser(profile);
+            toast.success("Cuenta creada");
+            navigate("/onboarding", { replace: true });
+          } else {
+            toast.success("Cuenta creada. Por favor, inicia sesión.");
+            setMode("login");
+          }
+        }
+      }
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Error de autenticación");
+      toast.error(err?.message || "Error de autenticación");
     } finally {
       setBusy(false);
     }
   };
 
-  const googleLogin = () => {
-    // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
-    const redirectUrl = window.location.origin + "/auth/callback";
-    window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
+  const googleLogin = async () => {
+    try {
+      await signInWithGoogle();
+    } catch (err) {
+      toast.error(err?.message || "Error con Google");
+    }
   };
 
   return (

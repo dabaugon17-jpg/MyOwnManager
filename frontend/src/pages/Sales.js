@@ -1,6 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Receipt, AlertCircle, Loader2, Trophy, BarChart3, Download, Search } from "lucide-react";
-import api, { buildFileUrl, API } from "../lib/api";
+import {
+  listSales,
+  getSalesStats,
+  createIncidencia,
+  exportSalesCSV,
+  buildFileUrl,
+} from "../lib/dataApi";
 import { toast } from "sonner";
 
 const fmt = (n) => new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(n || 0);
@@ -18,9 +24,9 @@ export default function Sales() {
   const refresh = async () => {
     setLoading(true);
     try {
-      const [s, st] = await Promise.all([api.get("/sales"), api.get("/sales/stats")]);
-      setSales(s.data);
-      setStats(st.data?.members || []);
+      const [s, st] = await Promise.all([listSales(), getSalesStats()]);
+      setSales(s);
+      setStats(st?.members || []);
     } finally { setLoading(false); }
   };
 
@@ -36,13 +42,7 @@ export default function Sales() {
 
   const exportCsv = async () => {
     try {
-      const token = localStorage.getItem("session_token");
-      const r = await fetch(`${API}/sales/export.csv`, {
-        headers: { Authorization: `Bearer ${token}` },
-        credentials: "include",
-      });
-      if (!r.ok) throw new Error("Error");
-      const blob = await r.blob();
+      const blob = await exportSalesCSV();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url; a.download = `ventas_${new Date().toISOString().slice(0,10)}.csv`;
@@ -55,11 +55,11 @@ export default function Sales() {
   const confirmIncidencia = async () => {
     if (!incTarget) return;
     try {
-      await api.post(`/products/${incTarget.product_id}/incidencia`, { motivo: motivo || "Sin especificar" });
+      await createIncidencia(incTarget.product_id, motivo || "Sin especificar");
       toast.success("Incidencia registrada");
       setIncTarget(null); setMotivo("");
       refresh();
-    } catch (e) { toast.error(e?.response?.data?.detail || "Error"); }
+    } catch (e) { toast.error(e?.message || "Error"); }
   };
 
   const maxFact = stats.reduce((acc, m) => Math.max(acc, m.facturacion), 0) || 1;

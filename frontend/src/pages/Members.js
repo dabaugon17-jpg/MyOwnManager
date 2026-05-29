@@ -1,7 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Crown, Shield, ShieldCheck, User as UserIcon, Trash2, Loader2, AlertTriangle, Target, Check } from "lucide-react";
-import api from "../lib/api";
+import {
+  getGroupMembers,
+  getMyGroup,
+  updateGroup,
+  setMemberRole,
+  kickMember,
+  deleteMyGroup,
+} from "../lib/dataApi";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "sonner";
 
@@ -14,7 +21,7 @@ const ROLE_META = {
 
 export default function Members() {
   const navigate = useNavigate();
-  const { user, checkAuth } = useAuth();
+  const { user, refresh: refreshAuth } = useAuth();
   const [members, setMembers] = useState([]);
   const [group, setGroup] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -25,9 +32,9 @@ export default function Members() {
   const refresh = async () => {
     setLoading(true);
     try {
-      const [m, g] = await Promise.all([api.get("/groups/members"), api.get("/groups/me")]);
-      setMembers(m.data); setGroup(g.data);
-      setObjetivo(String(g.data?.objetivo_mensual || 0));
+      const [m, g] = await Promise.all([getGroupMembers(), getMyGroup()]);
+      setMembers(m); setGroup(g);
+      setObjetivo(String(g?.objetivo_mensual || 0));
     } finally { setLoading(false); }
   };
 
@@ -40,42 +47,38 @@ export default function Members() {
 
   const setRole = async (m, role) => {
     try {
-      await api.put(`/groups/members/${m.user_id}/role`, { role });
+      await setMemberRole(m.user_id, role);
       toast.success(`Rol actualizado: ${ROLE_META[role].label}`);
       refresh();
-    } catch (e) { toast.error(e?.response?.data?.detail || "Error"); }
+    } catch (e) { toast.error(e?.message || "Error"); }
   };
 
   const removeMember = async (m) => {
     if (!window.confirm(`¿Eliminar a ${m.name} del grupo?`)) return;
     try {
-      await api.delete(`/groups/members/${m.user_id}`);
+      await kickMember(m.user_id);
       toast.success("Miembro eliminado");
       refresh();
-    } catch (e) { toast.error(e?.response?.data?.detail || "Error"); }
+    } catch (e) { toast.error(e?.message || "Error"); }
   };
 
   const deleteGroup = async () => {
     try {
-      await api.delete("/groups");
+      await deleteMyGroup();
       toast.success("Grupo eliminado");
-      await checkAuth();
+      await refreshAuth();
       navigate("/onboarding", { replace: true });
-    } catch (e) { toast.error(e?.response?.data?.detail || "Error"); }
-  };
-
-  const leaveGroup = async () => {
-    toast.info("Pide a un administrador que te elimine del grupo");
+    } catch (e) { toast.error(e?.message || "Error"); }
   };
 
   const saveObjetivo = async () => {
     setSavingObjetivo(true);
     try {
-      await api.put("/groups", { objetivo_mensual: parseFloat(objetivo) || 0 });
+      await updateGroup({ objetivo_mensual: parseFloat(objetivo) || 0 });
       toast.success("Objetivo actualizado");
       refresh();
     } catch (e) {
-      toast.error(e?.response?.data?.detail || "Error");
+      toast.error(e?.message || "Error");
     } finally { setSavingObjetivo(false); }
   };
 

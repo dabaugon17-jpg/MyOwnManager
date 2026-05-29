@@ -1,6 +1,6 @@
 import React from "react";
 import "@/index.css";
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 
 import { AuthProvider } from "./context/AuthContext";
@@ -16,11 +16,6 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import AuthCallback from "./components/AuthCallback";
 
 function Router() {
-  const location = useLocation();
-  // Synchronous detection of OAuth redirect in URL hash
-  if (location.hash?.includes("session_id=")) {
-    return <AuthCallback />;
-  }
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/login" replace />} />

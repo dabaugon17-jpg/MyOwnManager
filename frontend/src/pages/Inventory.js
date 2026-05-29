@@ -1,6 +1,15 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Plus, Camera, X, Loader2, Package, ChevronDown, Search, MoreVertical, Pencil, Trash2 } from "lucide-react";
-import api, { buildFileUrl } from "../lib/api";
+import {
+  listProducts,
+  getGroupMembers,
+  createProduct,
+  updateProduct,
+  deleteProduct,
+  sellProduct,
+  uploadProductImage,
+  buildFileUrl,
+} from "../lib/dataApi";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "sonner";
 
@@ -25,12 +34,12 @@ export default function Inventory() {
   const fetchProducts = async () => {
     setLoading(true);
     try {
-      const { data } = await api.get("/products?estado=inventario");
+      const data = await listProducts("inventario");
       setProducts(data);
     } finally { setLoading(false); }
   };
   const fetchMembers = async () => {
-    try { const { data } = await api.get("/groups/members"); setMembers(data); } catch {}
+    try { const data = await getGroupMembers(); setMembers(data); } catch { /* ignore */ }
   };
 
   useEffect(() => { fetchProducts(); fetchMembers(); }, []);
@@ -50,13 +59,13 @@ export default function Inventory() {
     });
   }, [products, search, activeCat]);
 
-  const deleteProduct = async (p) => {
+  const onDelete = async (p) => {
     if (!window.confirm(`¿Eliminar "${p.nombre}"? Esta acción no se puede deshacer.`)) return;
     try {
-      await api.delete(`/products/${p.product_id}`);
+      await deleteProduct(p.product_id);
       toast.success("Producto eliminado");
       fetchProducts();
-    } catch (e) { toast.error(e?.response?.data?.detail || "Error"); }
+    } catch (e) { toast.error(e?.message || "Error"); }
   };
 
   return (
@@ -114,7 +123,7 @@ export default function Inventory() {
               canManage={canManage}
               onSell={() => setSellTarget(p)}
               onEdit={() => setEditTarget(p)}
-              onDelete={() => deleteProduct(p)}
+              onDelete={() => onDelete(p)}
             />
           ))}
         </div>
@@ -263,17 +272,25 @@ function AddProductModal({ onClose, onCreated }) {
     setBusy(true);
     try {
       let file_id = null;
+      let foto_url = null;
       if (file) {
-        const fd = new FormData(); fd.append("file", file);
-        const { data } = await api.post("/files/upload", fd, { headers: { "Content-Type": "multipart/form-data" } });
-        file_id = data.file_id;
+        const up = await uploadProductImage(file);
+        file_id = up.file_id;
+        foto_url = up.foto_url;
       }
       const cant = Math.max(1, Math.min(parseInt(cantidad || 1, 10), 500));
-      const { data } = await api.post("/products", { nombre, precio_compra: parseFloat(precio), file_id, cantidad: cant, categoria });
+      const data = await createProduct({
+        nombre,
+        precio_compra: parseFloat(precio),
+        file_id,
+        foto_url,
+        cantidad: cant,
+        categoria,
+      });
       toast.success(cant > 1 ? `${data.created} unidades añadidas` : "Producto añadido");
       onCreated();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Error al añadir");
+      toast.error(err?.message || "Error al añadir");
     } finally { setBusy(false); }
   };
 
@@ -334,13 +351,13 @@ function EditProductModal({ product, onClose, onSaved }) {
     e.preventDefault();
     setBusy(true);
     try {
-      await api.put(`/products/${product.product_id}`, {
+      await updateProduct(product.product_id, {
         nombre, precio_compra: parseFloat(precio), categoria,
       });
       toast.success("Producto actualizado");
       onSaved();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Error");
+      toast.error(err?.message || "Error");
     } finally { setBusy(false); }
   };
 
@@ -383,13 +400,13 @@ function SellModal({ product, members, onClose, onSold }) {
   const confirm = async () => {
     setBusy(true);
     try {
-      await api.put(`/products/${product.product_id}/sell`, {
+      await sellProduct(product.product_id, {
         precio_venta: parseFloat(precio),
         vendedor_id: vendedor || undefined,
       });
       toast.success(`${product.nombre} vendido`);
       onSold();
-    } catch (e) { toast.error(e?.response?.data?.detail || "Error al vender"); }
+    } catch (e) { toast.error(e?.message || "Error al vender"); }
     finally { setBusy(false); }
   };
 

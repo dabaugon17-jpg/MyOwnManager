@@ -1,0 +1,44 @@
+{
+  "summary": "Iteration 5 — first test pass after migration from FastAPI/Mongo to React + Supabase. Frontend loads, /login renders, registration POST against Supabase succeeds (no console error, returns 200), but Supabase email confirmation is ENABLED on this project → signUp returns `data.session = null`, so Login.js correctly shows the toast 'Cuenta creada. Confirma tu email para iniciar sesión (revisa tu bandeja).' and switches to login tab. This is the EXPECTED behavior per the review request. However, this BLOCKS the rest of the e2e suite (onboarding, dashboard, inventory, sales, incidents, members, logout) because no pre-confirmed test user exists — /app/memory/test_credentials.md is stale (still references the deprecated FastAPI /api/auth endpoints). Could not test groups/products/sales/incidents/members against live Supabase.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Registration → Onboarding",
+        "issue": "Supabase project has email confirmation ENABLED, so new signups never auto-login. The app handles this correctly (toast + stay on /login), but no test user can be created end-to-end from the UI. To enable e2e testing the user must either (a) disable email confirmation in Supabase → Auth → Sign In/Up Providers → Email, or (b) provide a pre-confirmed test account in /app/memory/test_credentials.md.",
+        "affected_selectors": ["submit-auth", "input-email", "input-password", "input-name"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "ASK USER to disable email confirmation in Supabase (Auth → Providers → Email → 'Confirm email' OFF) for the preview environment, OR provide a pre-confirmed test user (email+password) in /app/memory/test_credentials.md so the testing agent can validate onboarding/dashboard/inventory/sales/incidents/members/logout flows.",
+    "Update /app/memory/test_credentials.md — it still documents the deprecated FastAPI /api/auth/register endpoint; rewrite it for the new Supabase auth flow."
+  ],
+  "critical_code_review_comments": [
+    "dataApi.js createProduct (line 193-209) still uses a single `insert(rows)` for cantidad>1 which is good; previous Mongo concern resolved with the migration.",
+    "dataApi.js getMyProfile (line 42) does a profile fallback insert — safe but ideally the handle_new_user trigger should always run; consider relying on it and surfacing an error if missing, instead of silently re-inserting.",
+    "Login.js submit() returns the `data` from signUp unused — minor. The `if (!data.session)` branch correctly handles email-confirmation; good.",
+    "dataApi.js sellProduct (line 233) trusts the client-supplied vendedor_id only after a separate profiles lookup; OK with RLS, but the writer's own `sold_by` could be spoofed by a malicious client editing the request. Consider moving sellProduct into a SECURITY DEFINER RPC for stronger guarantees.",
+    "dataApi.js createIncidencia (line 264) does 3 round-trips (select + insert + update). Wrap in an RPC for atomicity — currently a network failure between the insert and the productos.update leaves the row stale.",
+    "deleteIncident (line 310) similarly performs multiple non-atomic writes; same atomicity concern.",
+    "exportSalesCSV (line 517) is now client-side — good for serverless; UTF-8 BOM is correctly prepended.",
+    "No client-side test data cleanup is possible (no service_role key); future testing agents will leak TEST_ rows into the live Supabase. Recommend an `is_test` flag + scheduled cleanup, or a dev-only RPC."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A — backend testing skipped per review request (FastAPI deprecated)",
+    "frontend": "~15% — only Login page + registration-with-email-confirmation path verified; onboarding/dashboard/inventory/sales/incidents/members/logout NOT testable without a confirmed user"
+  },
+  "test_credentials": "/app/memory/test_credentials.md is OUTDATED (references deprecated FastAPI endpoints). No usable Supabase credentials available. Generated random emails (e2e.tester.<rand>@gmail.com) succeed at signUp but hit email-confirmation barrier.",
+  "seed_data_creation": "Two orphaned auth.users rows were created in Supabase during testing (e2e_0a4mwi1b@test.local — likely rejected with 400 due to .local TLD, and e2e.tester.zh3m7m8f@gmail.com — pending email confirmation). No profile/group/product rows were created (signUp never returned a session, so no authenticated calls ran).",
+  "retest_needed": true,
+  "main_agent_can_self_test": false,
+  "context_for_next_testing_agent": "BLOCKER: Supabase project at https://raxvxcmwtqczztskkyde.supabase.co has email confirmation ENABLED. Until either (a) the user disables it in Supabase dashboard, or (b) a pre-confirmed user is supplied, the e2e flow stops at registration. Once unblocked, the existing playwright script in this iteration's session can be re-used — it covers register → create group (tab-create, input-business-name, submit-create-group, group-code) → goto-dashboard → KPI verification (kpi-facturacion/beneficio/inversion/my-group-code) → filter-day/week/month/year → /app/inventario fab-add → submit-product → product-card-{id} → menu/edit/save-product-edit → sell-btn → confirm-sell → /app/ventas sales-list, view-rank, export-csv (Blob download), incidencia-btn → confirm-incidencia → /app/incidencias incidents-list, edit-inc/save-inc-edit/delete-inc → /app/miembros members-list, copy-code-btn, input-objetivo/save-objetivo, delete-group-btn → logout-btn. The test.local TLD is rejected by Supabase email validation (400) — use gmail.com or yopmail.com domains for any retest.",
+  "rca of the issue": "Root cause: Supabase Auth project configuration. signUp() in Login.js line 35 correctly passes email/password; Supabase accepts the request but, because 'Confirm email' is ON in Authentication → Providers → Email, the response has `data.session === null` (only `data.user` is populated with `email_confirmed_at = null`). Login.js line 41 detects this and routes to the toast+login-tab path. No code fix needed; this is intentional Supabase behavior. Mitigation: either (1) toggle off 'Confirm email' in the Supabase dashboard for the preview project (recommended for dev/QA), or (2) the main agent provides a pre-confirmed test user (manually confirm via the Supabase dashboard's Users panel → 'Confirm email')."
+}

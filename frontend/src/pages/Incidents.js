@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { AlertTriangle, Loader2, Pencil, Trash2, X } from "lucide-react";
-import api from "../lib/api";
+import { listIncidents, updateIncident, deleteIncident } from "../lib/dataApi";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "sonner";
 
@@ -20,7 +20,7 @@ export default function Incidents() {
 
   const refresh = async () => {
     setLoading(true);
-    try { const { data } = await api.get("/incidents"); setItems(data); }
+    try { const data = await listIncidents(); setItems(data); }
     finally { setLoading(false); }
   };
 
@@ -29,20 +29,20 @@ export default function Incidents() {
   const saveEdit = async () => {
     if (!editing) return;
     try {
-      await api.put(`/incidents/${editing.incidencia_id}`, { motivo });
+      await updateIncident(editing.incidencia_id, { motivo });
       toast.success("Incidencia actualizada");
       setEditing(null); setMotivo("");
       refresh();
-    } catch (e) { toast.error(e?.response?.data?.detail || "Error"); }
+    } catch (e) { toast.error(e?.message || "Error"); }
   };
 
   const deleteInc = async (id) => {
     if (!window.confirm("¿Eliminar esta incidencia?")) return;
     try {
-      await api.delete(`/incidents/${id}`);
+      await deleteIncident(id);
       toast.success("Incidencia eliminada");
       refresh();
-    } catch (e) { toast.error(e?.response?.data?.detail || "Error"); }
+    } catch (e) { toast.error(e?.message || "Error"); }
   };
 
   return (

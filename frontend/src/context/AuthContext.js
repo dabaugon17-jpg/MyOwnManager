@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import api from "../lib/api";
+import { supabase } from "../lib/supabase";
+import { getMyProfile } from "../lib/dataApi";
 
 const AuthContext = createContext(null);
 
@@ -7,33 +8,42 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const checkAuth = useCallback(async () => {
+  const refresh = useCallback(async () => {
     try {
-      const { data } = await api.get("/auth/me");
-      setUser(data);
+      const me = await getMyProfile();
+      setUser(me);
+      return me;
     } catch {
       setUser(null);
+      return null;
     } finally {
       setLoading(false);
     }
   }, []);
 
+  // alias kept for compatibility with old pages
+  const checkAuth = refresh;
+
   useEffect(() => {
-    checkAuth();
-  }, [checkAuth]);
+    refresh();
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
+        refresh();
+      } else if (event === "SIGNED_OUT") {
+        setUser(null);
+        setLoading(false);
+      }
+    });
+    return () => sub?.subscription?.unsubscribe?.();
+  }, [refresh]);
 
   const logout = async () => {
-    try {
-      await api.post("/auth/logout");
-    } catch {
-      // ignore
-    }
-    localStorage.removeItem("session_token");
+    await supabase.auth.signOut();
     setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, setUser, loading, checkAuth, logout }}>
+    <AuthContext.Provider value={{ user, setUser, loading, checkAuth, refresh, logout }}>
       {children}
     </AuthContext.Provider>
   );

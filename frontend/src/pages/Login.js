@@ -2,12 +2,12 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Mail, Lock, User, ChevronRight } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import api from "../lib/api";
+import { supabase } from "../lib/supabase";
 import { toast } from "sonner";
 
 export default function Login() {
   const navigate = useNavigate();
-  const { setUser } = useAuth();
+  const { refresh } = useAuth();
   const [mode, setMode] = useState("login"); // login | register
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -19,48 +19,63 @@ export default function Login() {
     setBusy(true);
     try {
       if (mode === "login") {
-        const { data } = await api.post("/auth/login", { email, password });
-        if (data?.session_token) {
-          localStorage.setItem("session_token", data.session_token);
-        }
-        setUser(data.user);
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        const me = await refresh();
         toast.success("Bienvenido");
-        navigate(data.user?.codigo_grupo ? "/app/dashboard" : "/onboarding", { replace: true });
-      } else {
-        if (!name.trim()) {
-          toast.error("Introduce tu nombre");
-          setBusy(false);
-          return;
-        }
-        const { data } = await api.post("/auth/register", { email, password, name });
-        if (data?.session_token) {
-          localStorage.setItem("session_token", data.session_token);
-        }
-        setUser(data.user);
-        toast.success("Cuenta creada");
-        navigate("/onboarding", { replace: true });
+        navigate(me?.codigo_grupo ? "/app/dashboard" : "/onboarding", { replace: true });
+        return;
       }
+      // register
+      if (!name.trim()) {
+        toast.error("Introduce tu nombre");
+        setBusy(false);
+        return;
+      }
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { name } },
+      });
+      if (error) throw error;
+      if (!data.session) {
+        // Email confirmation is enabled in Supabase → no session returned
+        toast.success(
+          "Cuenta creada. Confirma tu email para iniciar sesión (revisa tu bandeja)."
+        );
+        setMode("login");
+        setBusy(false);
+        return;
+      }
+      await refresh();
+      toast.success("Cuenta creada");
+      navigate("/onboarding", { replace: true });
     } catch (err) {
-      const msg = err?.response?.data?.detail || err?.message || "Error de autenticación";
-      toast.error(typeof msg === "string" ? msg : "Error de autenticación");
+      const msg = err?.message || "Error de autenticación";
+      toast.error(
+        msg === "Invalid login credentials" ? "Credenciales inválidas" : msg
+      );
     } finally {
       setBusy(false);
     }
   };
 
-  const googleLogin = () => {
+  const googleLogin = async () => {
     try {
-      const redirect = `${window.location.origin}/auth/callback`;
-      window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirect)}`;
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: `${window.location.origin}/auth/callback` },
+      });
+      if (error) throw error;
     } catch (err) {
-      toast.error("No se pudo iniciar Google");
+      toast.error(err?.message || "No se pudo iniciar Google");
     }
   };
 
   return (
     <div className="min-h-screen relative bg-[#0A0A0A] overflow-hidden">
-      {/* Background grid */}
-      <div className="absolute inset-0 opacity-[0.07] pointer-events-none"
+      <div
+        className="absolute inset-0 opacity-[0.07] pointer-events-none"
         style={{
           backgroundImage:
             "linear-gradient(rgba(255,255,255,0.4) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.4) 1px, transparent 1px)",

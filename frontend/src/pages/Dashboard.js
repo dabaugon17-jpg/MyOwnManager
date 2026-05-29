@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { TrendingUp, Wallet, PiggyBank, LogOut, Users, Target, Boxes, ChevronDown } from "lucide-react";
+import { TrendingUp, Wallet, PiggyBank, LogOut, Users, Target, Boxes } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from "recharts";
-import api from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
+import { getDashboard, getMyGroup, getGroupMembers } from "../lib/dataApi";
 
 const FILTERS = [
   { key: "day", label: "Día" },
@@ -25,13 +25,14 @@ export default function Dashboard() {
   const [members, setMembers] = useState([]);
 
   useEffect(() => {
-    const q = vendedor ? `&vendedor_id=${vendedor}` : "";
-    api.get(`/dashboard?filter=${filter}${q}`).then(r => setData(r.data)).catch(() => {});
+    getDashboard({ filter, vendedor_id: vendedor || null })
+      .then(setData)
+      .catch(() => {});
   }, [filter, vendedor]);
 
   useEffect(() => {
-    api.get("/groups/me").then(r => setGroup(r.data)).catch(() => {});
-    api.get("/groups/members").then(r => setMembers(r.data)).catch(() => {});
+    getMyGroup().then(setGroup).catch(() => {});
+    getGroupMembers().then(setMembers).catch(() => {});
   }, []);
 
   const onLogout = async () => {
@@ -66,7 +67,6 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* Vendor filter */}
       {members.length > 1 && (
         <div className="mb-5 flex items-center gap-2 flex-wrap">
           <span className="text-[10px] tracking-[0.2em] uppercase text-white/40">Filtrar:</span>
@@ -109,7 +109,6 @@ export default function Dashboard() {
         </div>
       </section>
 
-      {/* Monthly target */}
       {data?.objetivo_mensual > 0 ? (
         <section data-testid="target-section" className="bg-[#141414] border border-white/10 rounded-2xl p-5 mb-8 relative overflow-hidden">
           <div className="flex items-center justify-between mb-3">

@@ -1,47 +1,38 @@
 import React, { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import api from "../lib/api";
+import { supabase } from "../lib/supabase";
 
 export default function AuthCallback() {
   const navigate = useNavigate();
-  const { setUser, checkAuth } = useAuth();
-  const hasProcessed = useRef(false);
+  const { refresh } = useAuth();
+  const handled = useRef(false);
 
   useEffect(() => {
-    if (hasProcessed.current) return;
-    hasProcessed.current = true;
-
+    if (handled.current) return;
+    handled.current = true;
     (async () => {
       try {
-        // Emergent OAuth puts session_id in the URL hash
-        const hash = window.location.hash || "";
-        const params = new URLSearchParams(hash.replace(/^#/, ""));
-        const session_id = params.get("session_id");
-
-        if (!session_id) {
-          // Maybe already authenticated
-          await checkAuth();
+        // supabase-js auto-detects the session from the URL because
+        // we pass detectSessionInUrl: true in the client config.
+        // We just need to wait for it and then refresh the profile.
+        await new Promise((r) => setTimeout(r, 200));
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (!session) {
           navigate("/login", { replace: true });
           return;
         }
-
-        const { data } = await api.post("/auth/session", { session_id });
-        if (data?.session_token) {
-          localStorage.setItem("session_token", data.session_token);
-        }
-        setUser(data.user);
-
-        // Clean URL hash
+        const me = await refresh();
+        // Clean URL hash if any
         try {
           window.history.replaceState(null, "", "/auth/callback");
         } catch {
-          // ignore
+          /* ignore */
         }
-
-        navigate(data.user?.codigo_grupo ? "/app/dashboard" : "/onboarding", { replace: true });
-      } catch (e) {
-        console.error("Auth callback error:", e);
+        navigate(me?.codigo_grupo ? "/app/dashboard" : "/onboarding", { replace: true });
+      } catch {
         navigate("/login", { replace: true });
       }
     })();

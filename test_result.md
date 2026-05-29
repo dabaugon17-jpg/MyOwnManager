@@ -101,3 +101,52 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: "Arregla la web para que funcione y para que se puedan crear los usuarios que sea para todo el mundo"
+
+backend:
+  - task: "Auth register / login / me / logout (MongoDB)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Backend auth endpoints already existed (/api/auth/register, /api/auth/login, /api/auth/me, /api/auth/logout, /api/auth/session for Google OAuth). Need to verify all flow end-to-end so that anyone can create an account."
+      - working: true
+        agent: "testing"
+        comment: "✅ ALL 9 AUTH TESTS PASSED. Verified: (1) POST /api/auth/register creates user with session_token + cookie, returns user object with user_id/email/name/codigo_grupo=null; (2) Duplicate email returns 400 'Email ya registrado'; (3) POST /api/auth/login with correct credentials returns new session_token + user; (4) Wrong password returns 401 'Credenciales inválidas'; (5) GET /api/auth/me with Bearer token returns correct user; (6) GET /api/auth/me without auth returns 401; (7) POST /api/groups creates group with 6-char codigo_union, verified with GET /api/groups/me; (8) Second user can register, login, and join group using codigo_union; (9) POST /api/auth/logout returns {ok: true} and invalidates session (subsequent /api/auth/me returns 401). Full auth flow working perfectly for new user registration and group collaboration."
+
+frontend:
+  - task: "Frontend auth wired to backend (replaced Supabase)"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/context/AuthContext.js, frontend/src/pages/Login.js, frontend/src/components/AuthCallback.js, frontend/src/lib/supabase.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Removed Supabase dependency. Login.js now calls /api/auth/register and /api/auth/login. AuthContext uses /api/auth/me with session_token in localStorage + cookie. AuthCallback handles Emergent Google OAuth session_id. Frontend compiles successfully."
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 2
+  run_ui: false
+
+test_plan:
+  current_focus: []
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: "Please verify the backend auth flow: 1) POST /api/auth/register with email/password/name creates a new user and returns session_token + user object (and sets cookie); 2) duplicate email returns 400; 3) POST /api/auth/login with the same email/password returns 200 + session_token + user; 4) wrong password returns 401; 5) GET /api/auth/me with Authorization: Bearer <token> returns the user (and also via cookie); 6) POST /api/auth/logout deletes the session; 7) After logout, /api/auth/me returns 401. Also smoke test /api/groups creation/join with the new session_token so we know full app works for any newly registered user."
+  - agent: "testing"
+    message: "✅ Backend auth testing COMPLETE - All 9 tests passed! The auth system is fully functional: users can register, login, access protected endpoints, create/join groups, and logout properly. Session management with bcrypt + MongoDB is working correctly. Spanish error messages are correct. The app is ready for anyone to create an account and use the full inventory system. No issues found."

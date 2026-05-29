@@ -5,7 +5,7 @@ import uuid
 import pytest
 import requests
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://sales-dashboard-532.preview.emergentagent.com').rstrip('/')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://web-funcional-4.preview.emergentagent.com').rstrip('/')
 API = f"{BASE_URL}/api"
 
 EMAIL_A = f"test_a_{uuid.uuid4().hex[:8]}@test.com"

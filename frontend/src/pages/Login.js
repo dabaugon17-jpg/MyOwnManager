@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Mail, Lock, User, ChevronRight } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { signUp, signIn, signInWithGoogle, getUserProfile } from "../lib/supabase";
+import api from "../lib/api";
 import { toast } from "sonner";
 
 export default function Login() {
@@ -19,50 +19,41 @@ export default function Login() {
     setBusy(true);
     try {
       if (mode === "login") {
-        const data = await signIn(email, password);
-        if (data.user) {
-          const profile = await getUserProfile(data.user.id);
-          setUser(profile);
-          toast.success("Bienvenido");
-          navigate(profile?.codigo_grupo ? "/app/dashboard" : "/onboarding", { replace: true });
+        const { data } = await api.post("/auth/login", { email, password });
+        if (data?.session_token) {
+          localStorage.setItem("session_token", data.session_token);
         }
+        setUser(data.user);
+        toast.success("Bienvenido");
+        navigate(data.user?.codigo_grupo ? "/app/dashboard" : "/onboarding", { replace: true });
       } else {
-        const data = await signUp(email, password, name);
-        if (data.user) {
-          // Wait for profile to be created by trigger
-          let profile = null;
-          let attempts = 0;
-          while (!profile && attempts < 10) {
-            await new Promise(resolve => setTimeout(resolve, 500));
-            try {
-              profile = await getUserProfile(data.user.id);
-            } catch (err) {
-              // Profile not yet created
-            }
-            attempts++;
-          }
-          if (profile) {
-            setUser(profile);
-            toast.success("Cuenta creada");
-            navigate("/onboarding", { replace: true });
-          } else {
-            toast.success("Cuenta creada. Por favor, inicia sesión.");
-            setMode("login");
-          }
+        if (!name.trim()) {
+          toast.error("Introduce tu nombre");
+          setBusy(false);
+          return;
         }
+        const { data } = await api.post("/auth/register", { email, password, name });
+        if (data?.session_token) {
+          localStorage.setItem("session_token", data.session_token);
+        }
+        setUser(data.user);
+        toast.success("Cuenta creada");
+        navigate("/onboarding", { replace: true });
       }
     } catch (err) {
-      toast.error(err?.message || "Error de autenticación");
+      const msg = err?.response?.data?.detail || err?.message || "Error de autenticación";
+      toast.error(typeof msg === "string" ? msg : "Error de autenticación");
     } finally {
       setBusy(false);
     }
   };
 
-  const googleLogin = async () => {
+  const googleLogin = () => {
     try {
-      await signInWithGoogle();
+      const redirect = `${window.location.origin}/auth/callback`;
+      window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirect)}`;
     } catch (err) {
-      toast.error(err?.message || "Error con Google");
+      toast.error("No se pudo iniciar Google");
     }
   };
 
@@ -132,7 +123,7 @@ export default function Login() {
                 <input
                   data-testid="input-password"
                   type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Contraseña"
+                  placeholder="Contraseña (mín. 6 carácteres)"
                   className="w-full pl-9 pr-3 py-3 rounded-lg bg-white/5 border border-white/10 focus:border-white/30 outline-none text-sm"
                 />
               </div>

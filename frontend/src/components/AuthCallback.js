@@ -1,11 +1,11 @@
 import React, { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { supabase, getUserProfile } from "../lib/supabase";
+import api from "../lib/api";
 
 export default function AuthCallback() {
   const navigate = useNavigate();
-  const { setUser } = useAuth();
+  const { setUser, checkAuth } = useAuth();
   const hasProcessed = useRef(false);
 
   useEffect(() => {
@@ -14,34 +14,39 @@ export default function AuthCallback() {
 
     (async () => {
       try {
-        // Supabase handles the OAuth callback automatically
-        const { data: { session }, error } = await supabase.auth.getSession();
+        // Emergent OAuth puts session_id in the URL hash
+        const hash = window.location.hash || "";
+        const params = new URLSearchParams(hash.replace(/^#/, ""));
+        const session_id = params.get("session_id");
 
-        if (error || !session?.user) {
-          // Wait a bit for the session to be established
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          const { data: { session: retrySession }, error: retryError } = await supabase.auth.getSession();
-
-          if (retryError || !retrySession?.user) {
-            throw new Error("No session found");
-          }
-
-          if (retrySession?.user) {
-            const profile = await getUserProfile(retrySession.user.id);
-            setUser(profile);
-            navigate(profile?.codigo_grupo ? "/app/dashboard" : "/onboarding", { replace: true });
-          }
-        } else {
-          const profile = await getUserProfile(session.user.id);
-          setUser(profile);
-          navigate(profile?.codigo_grupo ? "/app/dashboard" : "/onboarding", { replace: true });
+        if (!session_id) {
+          // Maybe already authenticated
+          await checkAuth();
+          navigate("/login", { replace: true });
+          return;
         }
+
+        const { data } = await api.post("/auth/session", { session_id });
+        if (data?.session_token) {
+          localStorage.setItem("session_token", data.session_token);
+        }
+        setUser(data.user);
+
+        // Clean URL hash
+        try {
+          window.history.replaceState(null, "", "/auth/callback");
+        } catch {
+          // ignore
+        }
+
+        navigate(data.user?.codigo_grupo ? "/app/dashboard" : "/onboarding", { replace: true });
       } catch (e) {
         console.error("Auth callback error:", e);
         navigate("/login", { replace: true });
       }
     })();
-  }, [navigate, setUser]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#0A0A0A] text-white/70">

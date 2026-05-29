@@ -20,8 +20,10 @@ export default function Onboarding() {
     setBusy(true);
     try {
       const { data } = await api.post("/groups", { nombre_negocio: businessName });
-      setCreatedCode(data.codigo_union);
+      // IMPORTANT: refresh user (codigo_grupo) BEFORE showing the "Entrar al dashboard"
+      // button, otherwise ProtectedRoute will bounce the user back to /onboarding.
       await checkAuth();
+      setCreatedCode(data.codigo_union);
       toast.success("Negocio creado");
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Error");
@@ -33,12 +35,18 @@ export default function Onboarding() {
     setBusy(true);
     try {
       await api.post("/groups/join", { codigo_union: joinCode });
-      toast.success("Te has unido al grupo");
       await checkAuth();
+      toast.success("Te has unido al grupo");
       navigate("/app/dashboard", { replace: true });
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Código inválido");
     } finally { setBusy(false); }
+  };
+
+  const goToDashboard = async () => {
+    // Belt-and-suspenders: re-fetch user just in case context is still stale.
+    try { await checkAuth(); } catch { /* ignore */ }
+    navigate("/app/dashboard", { replace: true });
   };
 
   const copyCode = async () => {
@@ -60,7 +68,7 @@ export default function Onboarding() {
           </div>
           <button
             data-testid="goto-dashboard"
-            onClick={() => navigate("/app/dashboard", { replace: true })}
+            onClick={goToDashboard}
             className="w-full py-3 bg-white text-black font-medium rounded-lg hover:bg-white/90 transition-colors"
           >Entrar al dashboard</button>
         </div>

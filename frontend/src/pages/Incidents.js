@@ -17,7 +17,6 @@ export default function Incidents() {
   const [editing, setEditing] = useState(null);
   const [motivo, setMotivo] = useState("");
 
-  // Permisos según el rol
   const canEdit = ADMIN_ROLES.includes(user?.role);
   const canRestore = user?.role === "creator" || user?.role === "admin_total";
   const canDelete = user?.role === "creator";
@@ -43,7 +42,6 @@ export default function Incidents() {
   const restoreInc = async (inc) => {
     if (!window.confirm(`¿Devolver "${inc.producto_nombre}" al inventario?`)) return;
     try {
-      // 1. Volver a poner el producto en estado 'inventario'
       const { error: prodErr } = await supabase
         .from("productos")
         .update({ estado: 'inventario' })
@@ -51,7 +49,6 @@ export default function Incidents() {
       
       if (prodErr) throw prodErr;
 
-      // 2. Eliminar la incidencia para limpiar el registro
       await deleteIncident(inc.incidencia_id);
 
       toast.success("Producto devuelto al inventario");
@@ -60,10 +57,10 @@ export default function Incidents() {
   };
 
   const deleteInc = async (id) => {
-    if (!window.confirm("¿Eliminar esta incidencia DEFINITIVAMENTE? El producto seguirá marcado como incidencia, pero se borrará este registro.")) return;
+    if (!window.confirm("¿Eliminar DEFINITIVAMENTE? El producto desaparecerá por completo de la aplicación, como si nunca hubiera existido.")) return;
     try {
       await deleteIncident(id);
-      toast.success("Incidencia eliminada");
+      toast.success("Producto borrado por completo");
       refresh();
     } catch (e) { toast.error(e?.message || "Error"); }
   };
@@ -107,7 +104,6 @@ export default function Incidents() {
                 )}
               </div>
               
-              {/* Botones de acción dinámicos según el rol */}
               <div className="flex flex-col justify-center gap-1 border-l border-white/5 pl-2 ml-2">
                 {canEdit && (
                   <button
@@ -131,7 +127,7 @@ export default function Incidents() {
                     data-testid={`delete-inc-${i.incidencia_id}`}
                     onClick={() => deleteInc(i.incidencia_id)}
                     className="p-1.5 rounded hover:bg-red-500/10 text-red-400/70 hover:text-red-400 transition-colors"
-                    title="Eliminar definitivamente"
+                    title="Borrar producto de la aplicación"
                   ><Trash2 size={15}/></button>
                 )}
               </div>

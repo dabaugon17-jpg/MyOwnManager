@@ -52,7 +52,6 @@ export const getMyProfile = async () => {
     .maybeSingle();
 
   if (!profile) {
-    // Fallback: in case the trigger didn't run (shouldn't happen, but safe)
     const payload = {
       id: authUser.id,
       email: authUser.email,
@@ -312,23 +311,22 @@ export const deleteIncident = async (id) => {
     .select("product_id")
     .eq("incidencia_id", id)
     .maybeSingle();
-  const { error } = await supabase
-    .from("incidencias")
-    .delete()
-    .eq("incidencia_id", id);
-  if (error) throw new Error(error.message);
+    
   if (inc?.product_id) {
-    const { data: prod } = await supabase
+    // Al borrar el producto, la regla "ON DELETE CASCADE" de Supabase
+    // borrará automáticamente la incidencia. Desaparece de raíz.
+    const { error: prodError } = await supabase
       .from("productos")
-      .select("sold_at, estado")
-      .eq("product_id", inc.product_id)
-      .maybeSingle();
-    if (prod && prod.sold_at && prod.estado === "incidencia") {
-      await supabase
-        .from("productos")
-        .update({ estado: "vendido" })
-        .eq("product_id", inc.product_id);
-    }
+      .delete()
+      .eq("product_id", inc.product_id);
+    if (prodError) throw new Error(prodError.message);
+  } else {
+    // Por si la incidencia fuera "huérfana"
+    const { error } = await supabase
+      .from("incidencias")
+      .delete()
+      .eq("incidencia_id", id);
+    if (error) throw new Error(error.message);
   }
 };
 
@@ -405,7 +403,6 @@ export const getDashboard = async ({ filter = "month", vendedor_id = null } = {}
   ]);
   if (error) throw new Error(error.message);
 
-  // ¡AQUÍ ESTÁ LA MAGIA! Ignorar por completo los productos que estén en incidencias
   const activeProducts = (rawProducts || []).filter((p) => p.estado !== "incidencia");
 
   let filtered = activeProducts;
@@ -432,7 +429,6 @@ export const getDashboard = async ({ filter = "month", vendedor_id = null } = {}
   const progreso_pct =
     objetivo_mensual > 0 ? (facturacion_mes / objetivo_mensual) * 100 : 0;
 
-  // Chart
   const monthNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
   const dayNames = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
   const chart = [];

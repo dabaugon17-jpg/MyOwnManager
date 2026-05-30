@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { AlertTriangle, Loader2, Pencil, Trash2, X, ArchiveRestore } from "lucide-react";
-import { listIncidents, updateIncident, deleteIncident } from "../lib/dataApi";
+import { listIncidents, updateIncident, deleteIncident, deleteIncidentDefinitive } from "../lib/dataApi";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "sonner";
@@ -40,8 +40,9 @@ export default function Incidents() {
   };
 
   const restoreInc = async (inc) => {
-    if (!window.confirm(`¿Devolver "${inc.producto_nombre}" al inventario?`)) return;
+    if (!window.confirm(`¿Devolver "${inc.producto_nombre}" al stock inicial?`)) return;
     try {
+      // 1. Lo pasamos al stock para que vuelva a contar en tus números
       const { error: prodErr } = await supabase
         .from("productos")
         .update({ estado: 'inventario' })
@@ -49,17 +50,19 @@ export default function Incidents() {
       
       if (prodErr) throw prodErr;
 
+      // 2. Solo borramos el aviso de la incidencia (el producto se salva)
       await deleteIncident(inc.incidencia_id);
 
-      toast.success("Producto devuelto al inventario");
+      toast.success("Producto devuelto al stock");
       refresh();
     } catch (e) { toast.error(e?.message || "Error al restaurar"); }
   };
 
-  const deleteInc = async (id) => {
+  const deleteInc = async (inc) => {
     if (!window.confirm("¿Eliminar DEFINITIVAMENTE? El producto desaparecerá por completo de la aplicación, como si nunca hubiera existido.")) return;
     try {
-      await deleteIncident(id);
+      // Usamos el botón nuclear para borrar ambas cosas
+      await deleteIncidentDefinitive(inc.incidencia_id, inc.product_id);
       toast.success("Producto borrado por completo");
       refresh();
     } catch (e) { toast.error(e?.message || "Error"); }
@@ -118,14 +121,14 @@ export default function Incidents() {
                   <button
                     onClick={() => restoreInc(i)}
                     className="p-1.5 rounded hover:bg-emerald-500/10 text-emerald-400/70 hover:text-emerald-400 transition-colors"
-                    title="Devolver al inventario"
+                    title="Devolver al stock inicial"
                   ><ArchiveRestore size={15}/></button>
                 )}
 
                 {canDelete && (
                   <button
                     data-testid={`delete-inc-${i.incidencia_id}`}
-                    onClick={() => deleteInc(i.incidencia_id)}
+                    onClick={() => deleteInc(i)}
                     className="p-1.5 rounded hover:bg-red-500/10 text-red-400/70 hover:text-red-400 transition-colors"
                     title="Borrar producto de la aplicación"
                   ><Trash2 size={15}/></button>

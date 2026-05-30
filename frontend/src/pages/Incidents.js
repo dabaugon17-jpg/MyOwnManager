@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { AlertTriangle, Loader2, Pencil, Trash2, X } from "lucide-react";
+import { AlertTriangle, Loader2, Pencil, Trash2, X, ArchiveRestore } from "lucide-react";
 import { listIncidents, updateIncident, deleteIncident } from "../lib/dataApi";
+import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "sonner";
 
@@ -16,7 +17,10 @@ export default function Incidents() {
   const [editing, setEditing] = useState(null);
   const [motivo, setMotivo] = useState("");
 
+  // Permisos según el rol
   const canEdit = ADMIN_ROLES.includes(user?.role);
+  const canRestore = user?.role === "creator" || user?.role === "admin_total";
+  const canDelete = user?.role === "creator";
 
   const refresh = async () => {
     setLoading(true);
@@ -36,8 +40,27 @@ export default function Incidents() {
     } catch (e) { toast.error(e?.message || "Error"); }
   };
 
+  const restoreInc = async (inc) => {
+    if (!window.confirm(`¿Devolver "${inc.producto_nombre}" al inventario?`)) return;
+    try {
+      // 1. Volver a poner el producto en estado 'inventario'
+      const { error: prodErr } = await supabase
+        .from("productos")
+        .update({ estado: 'inventario' })
+        .eq("product_id", inc.product_id);
+      
+      if (prodErr) throw prodErr;
+
+      // 2. Eliminar la incidencia para limpiar el registro
+      await deleteIncident(inc.incidencia_id);
+
+      toast.success("Producto devuelto al inventario");
+      refresh();
+    } catch (e) { toast.error(e?.message || "Error al restaurar"); }
+  };
+
   const deleteInc = async (id) => {
-    if (!window.confirm("¿Eliminar esta incidencia?")) return;
+    if (!window.confirm("¿Eliminar esta incidencia DEFINITIVAMENTE? El producto seguirá marcado como incidencia, pero se borrará este registro.")) return;
     try {
       await deleteIncident(id);
       toast.success("Incidencia eliminada");
@@ -83,22 +106,36 @@ export default function Incidents() {
                   <p className="text-[11px] text-white/40 mt-1.5">Venta: {fmt(i.precio_venta)}</p>
                 )}
               </div>
-              {canEdit && (
-                <div className="flex flex-col gap-1">
+              
+              {/* Botones de acción dinámicos según el rol */}
+              <div className="flex flex-col justify-center gap-1 border-l border-white/5 pl-2 ml-2">
+                {canEdit && (
                   <button
                     data-testid={`edit-inc-${i.incidencia_id}`}
                     onClick={() => { setEditing(i); setMotivo(i.motivo); }}
-                    className="p-1.5 rounded hover:bg-white/5 text-white/60 hover:text-white"
-                    aria-label="Editar"
-                  ><Pencil size={14}/></button>
+                    className="p-1.5 rounded hover:bg-white/5 text-white/60 hover:text-white transition-colors"
+                    title="Editar motivo"
+                  ><Pencil size={15}/></button>
+                )}
+                
+                {canRestore && (
+                  <button
+                    onClick={() => restoreInc(i)}
+                    className="p-1.5 rounded hover:bg-emerald-500/10 text-emerald-400/70 hover:text-emerald-400 transition-colors"
+                    title="Devolver al inventario"
+                  ><ArchiveRestore size={15}/></button>
+                )}
+
+                {canDelete && (
                   <button
                     data-testid={`delete-inc-${i.incidencia_id}`}
                     onClick={() => deleteInc(i.incidencia_id)}
-                    className="p-1.5 rounded hover:bg-red-500/10 text-red-400/70 hover:text-red-400"
-                    aria-label="Eliminar"
-                  ><Trash2 size={14}/></button>
-                </div>
-              )}
+                    className="p-1.5 rounded hover:bg-red-500/10 text-red-400/70 hover:text-red-400 transition-colors"
+                    title="Eliminar definitivamente"
+                  ><Trash2 size={15}/></button>
+                )}
+              </div>
+
             </div>
           ))}
         </div>
@@ -117,8 +154,8 @@ export default function Incidents() {
               className="w-full px-3 py-3 rounded-lg bg-white/5 border border-white/10 focus:border-white/30 outline-none text-sm mb-4 resize-none"
             />
             <div className="flex gap-2">
-              <button onClick={() => setEditing(null)} className="flex-1 py-3 rounded-lg border border-white/10 hover:bg-white/5">Cancelar</button>
-              <button data-testid="save-inc-edit" onClick={saveEdit} className="flex-1 py-3 rounded-lg bg-white text-black font-medium hover:bg-white/90">Guardar</button>
+              <button onClick={() => setEditing(null)} className="flex-1 py-3 rounded-lg border border-white/10 hover:bg-white/5 transition-colors">Cancelar</button>
+              <button data-testid="save-inc-edit" onClick={saveEdit} className="flex-1 py-3 rounded-lg bg-white text-black font-medium hover:bg-white/90 transition-colors">Guardar</button>
             </div>
           </div>
         </div>

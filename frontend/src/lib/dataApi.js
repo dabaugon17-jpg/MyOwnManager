@@ -311,22 +311,30 @@ export const deleteIncident = async (id) => {
     .select("product_id")
     .eq("incidencia_id", id)
     .maybeSingle();
-    
-  if (inc?.product_id) {
-    // Al borrar el producto, la regla "ON DELETE CASCADE" de Supabase
-    // borrará automáticamente la incidencia. Desaparece de raíz.
-    const { error: prodError } = await supabase
+  
+  // Solo borra el aviso, no el producto (ideal para restaurar)
+  const { error } = await supabase
+    .from("incidencias")
+    .delete()
+    .eq("incidencia_id", id);
+  if (error) throw new Error(error.message);
+};
+
+export const deleteIncidentDefinitive = async (incidencia_id, product_id) => {
+  // 1. Borramos el aviso
+  const { error: err1 } = await supabase
+    .from("incidencias")
+    .delete()
+    .eq("incidencia_id", incidencia_id);
+  if (err1) throw new Error(err1.message);
+
+  // 2. Borramos el producto para siempre
+  if (product_id) {
+    const { error: err2 } = await supabase
       .from("productos")
       .delete()
-      .eq("product_id", inc.product_id);
-    if (prodError) throw new Error(prodError.message);
-  } else {
-    // Por si la incidencia fuera "huérfana"
-    const { error } = await supabase
-      .from("incidencias")
-      .delete()
-      .eq("incidencia_id", id);
-    if (error) throw new Error(error.message);
+      .eq("product_id", product_id);
+    if (err2) throw new Error(err2.message);
   }
 };
 
